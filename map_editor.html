@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Neeyu JK – Map Editor</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0d0d18; color:#ccc; font:12px monospace;
+       display:flex; flex-direction:column; height:100vh; overflow:hidden; }
+
+#toolbar {
+  display:flex; flex-wrap:wrap; gap:4px; padding:5px 8px;
+  background:#12122a; border-bottom:1px solid #2a2a4a; align-items:center; flex-shrink:0;
+}
+.tool-btn {
+  padding:3px 8px; border:1px solid #444; background:#1a1a2e; color:#aaa;
+  cursor:pointer; border-radius:3px; font:11px monospace; user-select:none;
+}
+.tool-btn:hover { background:#252540; }
+.tool-btn.active { background:#2a2a5a; border-color:#6677cc; color:#aabbff; }
+.sep { width:1px; background:#333; margin:0 4px; align-self:stretch; }
+
+#canvas-wrap { flex:1; overflow:hidden; position:relative; padding-top:28px; }
+#editorCanvas { display:block; cursor:crosshair; width:100%; height:100%; }
+
+#statusbar {
+  padding:3px 8px; background:#0a0a16; border-top:1px solid #222;
+  display:flex; gap:16px; flex-shrink:0; font-size:10px; color:#666;
+}
+
+/* Export overlay */
+#overlay {
+  display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7);
+  justify-content:center; align-items:center; z-index:10;
+}
+#overlay.show { display:flex; }
+#exportBox {
+  background:#12122a; border:1px solid #446; padding:16px; width:70vw; max-height:80vh;
+  display:flex; flex-direction:column; gap:8px;
+}
+#exportBox h3 { color:#aabf; }
+#exportBox textarea {
+  flex:1; min-height:300px; background:#080814; color:#6f6; font:10px monospace;
+  border:1px solid #334; resize:vertical; padding:6px;
+}
+#exportBox .row { display:flex; gap:8px; }
+#exportBox button { padding:4px 14px; }
+
+/* Play overlay */
+#playOverlay {
+  display:none; position:fixed; inset:0; background:#000;
+  flex-direction:column; align-items:center; justify-content:center; z-index:20;
+}
+#playOverlay.show { display:flex; }
+#playCanvasWrap {
+  position:absolute;
+  inset:0;
+}
+#playCanvas { display:block; width:100%; height:100%; image-rendering:auto; }
+#playHUD {
+  position:absolute; top:8px; left:50%; transform:translateX(-50%);
+  background:rgba(0,0,0,0.65); padding:4px 14px; border-radius:4px;
+  color:#bbb; font:11px monospace; white-space:nowrap; pointer-events:none;
+}
+#playMsg {
+  position:absolute; bottom:12px; left:50%; transform:translateX(-50%);
+  background:rgba(0,0,0,0.7); padding:4px 12px; border-radius:4px;
+  color:#ffdd44; font:12px monospace; pointer-events:none;
+}
+/* Spawn mode: 에디터 캔버스 커서 변경 */
+body.spawn-mode #editorCanvas { cursor: cell; }
+
+/* Stage panel */
+#stagePanel {
+  display:none; position:fixed; right:14px; top:46px; z-index:15;
+  background:#12122a; border:1px solid #446; border-radius:5px;
+  padding:10px; width:270px; max-height:80vh; overflow-y:auto;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.7);
+}
+#stagePanel.show { display:block; }
+#stagePanel h4 { color:#ffbb55; margin-bottom:8px; font-size:12px; }
+.stage-entry {
+  display:flex; align-items:center; gap:4px; margin-bottom:5px; font-size:11px;
+}
+.stage-entry input[type=text] {
+  flex:1; background:#1a1a30; border:1px solid #334; color:#ccc;
+  padding:2px 5px; border-radius:2px; font:11px monospace;
+}
+.stage-entry input[type=color] { width:22px; height:22px; border:none; cursor:pointer; padding:0; border-radius:2px; }
+.stage-entry span { color:#556; font-size:10px; min-width:52px; }
+.stage-entry button { padding:1px 6px; font-size:10px; cursor:pointer; border-radius:2px; border:1px solid #334; background:#1a1a30; color:#aaa; }
+.stage-entry button:hover { background:#252545; }
+#btnAddStage { width:100%; margin-top:6px; padding:4px; background:#1a2a1a; border:1px solid #3a5a3a; color:#88ff88; border-radius:3px; cursor:pointer; font:11px monospace; }
+#btnAddStage:hover { background:#223322; }
+#addScreenBtn {
+  position:absolute; top:0; left:0; right:0; height:28px;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(80,180,80,0.12); border-bottom:2px dashed rgba(80,200,80,0.35);
+  cursor:pointer; font:11px monospace; color:rgba(120,220,120,0.7);
+  user-select:none; z-index:5; transition: background 0.15s;
+}
+#addScreenBtn:hover { background:rgba(80,180,80,0.25); color:#88ff88; }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <strong style="color:#88aaff;margin-right:2px;">TOOL:</strong>
+
+  <button class="tool-btn active" data-tool="wall">Wall [W]</button>
+  <button class="tool-btn" data-tool="wall_breakable">Break [B]</button>
+  <button class="tool-btn" data-tool="wall_ice">Ice [I]</button>
+  <button class="tool-btn" data-tool="wall_save">Save [S]</button>
+  <button class="tool-btn" data-tool="wall_goal">Goal [G]</button>
+
+  <div class="sep"></div>
+
+  <button class="tool-btn" data-tool="diag_r">Diag/ [/]</button>
+  <button class="tool-btn" data-tool="diag_l">Diag\ [\]</button>
+
+  <div class="sep"></div>
+
+  <button class="tool-btn" data-tool="trap">Trap [T]</button>
+  <button class="tool-btn" data-tool="fan">Fan [N]</button>
+  <span id="fanDirBtn" style="color:#88ccff;cursor:pointer;padding:3px 6px;border:1px solid #335;border-radius:3px;"
+        title="D키로 방향 변경">dir:→ [D]</span>
+
+  <div class="sep"></div>
+
+  <button class="tool-btn" data-tool="moving">Moving [M]</button>
+  <span id="movSpeedLabel" style="color:#88aaff;font-size:10px;">spd:1.2 [±]</span>
+
+  <div class="sep"></div>
+
+  <button class="tool-btn" data-tool="erase">Erase [E]</button>
+
+  <div style="flex:1"></div>
+
+  <button class="tool-btn" id="btnPlay" style="color:#88ff88;border-color:#4a6;font-weight:bold;">▶ Play [P]</button>
+  <div class="sep"></div>
+  <button class="tool-btn" id="btnUndo" title="Ctrl+Z">Undo</button>
+  <button class="tool-btn" id="btnSave" title="Ctrl+S">Save</button>
+  <button class="tool-btn" id="btnLoad">Load</button>
+  <button class="tool-btn" id="btnExport" style="color:#ffee88;">Export JS</button>
+  <button class="tool-btn" id="btnClear" style="color:#ff6666;">Clear</button>
+  <div class="sep"></div>
+  <button class="tool-btn" id="btnStages" style="color:#ffbb55;">Stages</button>
+  <button class="tool-btn" id="btnAddScreen" style="color:#88ff88;">＋ 맵 추가</button>
+</div>
+
+<!-- Stage panel -->
+<div id="stagePanel">
+  <h4>⬛ 스테이지 경계 설정</h4>
+  <div id="stageList"></div>
+  <button id="btnAddStage">+ 현재 위치에 경계 추가</button>
+</div>
+
+<div id="canvas-wrap" style="position:relative;">
+  <div id="addScreenBtn">▲ 클릭하여 맵 1화면 추가</div>
+  <canvas id="editorCanvas"></canvas>
+</div>
+
+<div id="statusbar">
+  <span id="stCoord">col:- row:- | worldX:- worldY:-</span>
+  <span id="stCell">cell: (empty)</span>
+  <span id="stCam">camY:6400</span>
+  <span style="margin-left:auto;color:#444">Wheel=scroll  LClick=paint  RClick=erase  Moving=2clicks  Esc=cancel</span>
+</div>
+
+<!-- Export overlay -->
+<div id="overlay">
+  <div id="exportBox">
+    <h3>Export — PLATFORMS_DEF / FANS / TRAPS 를 main.js에 붙여넣기</h3>
+    <textarea id="exportText" readonly></textarea>
+    <div class="row">
+      <button id="btnCopy">클립보드 복사</button>
+      <button id="btnClose">닫기</button>
+    </div>
+  </div>
+</div>
+
+<!-- Play overlay -->
+<div id="playOverlay">
+  <div id="playCanvasWrap">
+    <canvas id="playCanvas"></canvas>
+    <div id="playHUD">ESC: 에디터 복귀 &nbsp;|&nbsp; Space: 점프 차지 &nbsp;|&nbsp; ←→: 이동</div>
+    <div id="playMsg"></div>
+  </div>
+</div>
+
+<script type="module">
+import { GameEngine } from './src/engine.js';
+import { Renderer }   from './src/renderer.js';
+
+// ═══════════════════════════════════════════════════════════
+//  EDITOR
+// ═══════════════════════════════════════════════════════════
+
+const CELL      = 40;
+const COLS      = Math.floor(window.innerWidth / CELL);
+const MAP_W     = COLS * CELL;
+const SCREEN_ROWS = Math.ceil(window.innerHeight / CELL); // 화면 1개 분량의 행 수
+
+let ROWS = SCREEN_ROWS;   // 초기: 1화면
+let MAP_H = ROWS * CELL;
+
+const canvas = document.getElementById('editorCanvas');
+const ctx    = canvas.getContext('2d');
+
+function resizeCanvas() {
+    canvas.width  = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+    render();
+}
+window.addEventListener('resize', resizeCanvas);
+
+let camY = 0; // 초기 1화면이라 맨 위가 맨 아래이기도 함
+
+// ── 스테이지 경계 ──────────────────────────────────────────────────────────────
+let stages = []; // [{ name, color, topRow }]  topRow: 이 경계선 위쪽이 해당 스테이지
+
+const STAGE_COLORS = ['#ff6655','#ffaa44','#ffee44','#88ff66','#44ffcc','#44aaff','#aa66ff','#ff66aa'];
+
+function addStageAtRow(row) {
+    const color = STAGE_COLORS[stages.length % STAGE_COLORS.length];
+    stages.push({ name: `Stage ${stages.length + 1}`, color, topRow: row });
+    stages.sort((a, b) => a.topRow - b.topRow);
+    renderStageList();
+    render();
+}
+
+function renderStageList() {
+    const list = document.getElementById('stageList');
+    list.innerHTML = '';
+    const sorted = stages.slice().sort((a, b) => a.topRow - b.topRow);
+    for (let i = 0; i < sorted.length; i++) {
+        const s = sorted[i];
+        const origIdx = stages.indexOf(s);
+        const div = document.createElement('div');
+        div.className = 'stage-entry';
+        div.innerHTML = `
+            <input type="color" value="${s.color}" class="sc">
+            <input type="text" value="${s.name}" class="sn" placeholder="이름">
+            <span>r:${s.topRow}</span>
+            <button class="sg" title="이동">→</button>
+            <button class="sd" title="삭제">✕</button>
+        `;
+        const ic = div.querySelector('.sc');
+        ic.addEventListener('input', () => { s.color = ic.value; render(); });
+        const it = div.querySelector('.sn');
+        it.addEventListener('input', () => { s.name = it.value; render(); });
+        div.querySelector('.sg').addEventListener('click', () => {
+            camY = Math.max(0, Math.min(MAP_H - canvas.height, s.topRow * CELL - canvas.height * 0.4));
+            render();
+        });
+        div.querySelector('.sd').addEventListener('click', () => {
+            stages.splice(origIdx, 1);
+            renderStageList(); render();
+        });
+        list.appendChild(div);
+    }
+}
+
+// 맵 위쪽으로 1화면 추가
+function addScreenToTop() {
+    const n = SCREEN_ROWS;
+    const newGrid = new Map();
+    for (const [key, val] of grid) {
+        if (!val.length) continue;
+        const [cs, rs] = key.split(',');
+        const c = +cs, r = +rs;
+        for (const item of val) {
+            if (item.type === 'moving' && item.endR !== undefined) item.endR += n;
+        }
+        newGrid.set(`${c},${r + n}`, val);
+    }
+    grid.clear();
+    for (const [k, v] of newGrid) grid.set(k, v);
+    stages.forEach(s => s.topRow += n);
+    if (spawnMarker) spawnMarker.r += n;
+    ROWS += n;
+    MAP_H = ROWS * CELL;
+    camY = 0; // 새로 생긴 맨 위로 스크롤
+    renderStageList();
+    render();
+}
+
+// ── 그리드 데이터 ─────────────────────────────────────────────────────────────
+const grid = new Map();
+function cellKey(c, r) { return `${c},${r}`; }
+function getCell(c, r) {
+    const k = cellKey(c, r);
+    if (!grid.has(k)) grid.set(k, []);
+    return grid.get(k);
+}
+// ── Undo ─────────────────────────────────────────────────────────────────────
+const undoStack = [];
+let _batch = null; // 배치 중 임시 버퍼
+
+function _pushUndo(entry) {
+    if (_batch) { _batch.push(entry); return; }
+    undoStack.push(entry);
+    if (undoStack.length > 300) undoStack.shift();
+}
+function beginBatch() { _batch = []; }
+function endBatch() {
+    if (_batch && _batch.length) {
+        undoStack.push({ op: 'batch', entries: _batch });
+        if (undoStack.length > 300) undoStack.shift();
+    }
+    _batch = null;
+}
+
+function _undoOne(e) {
+    if (e.op === 'add') {
+        const cell = getCell(e.c, e.r);
+        const idx = cell.lastIndexOf(e.item);
+        if (idx >= 0) cell.splice(idx, 1);
+    } else if (e.op === 'eraseAll') {
+        grid.set(cellKey(e.c, e.r), [...e.saved]);
+    }
+}
+function undo() {
+    const e = undoStack.pop(); if (!e) return;
+    if (e.op === 'batch') {
+        for (let i = e.entries.length - 1; i >= 0; i--) _undoOne(e.entries[i]);
+    } else {
+        _undoOne(e);
+    }
+    render();
+}
+
+function addItem(c, r, item) {
+    const cell = getCell(c, r);
+    if (item.type !== 'moving') {
+        const dup = cell.findIndex(i => i.type === item.type);
+        if (dup >= 0) cell.splice(dup, 1);
+    }
+    cell.push(item);
+    _pushUndo({ op: 'add', c, r, item });
+}
+function eraseAll(c, r) {
+    const k = cellKey(c, r);
+    if (!grid.has(k) || !grid.get(k).length) return;
+    const saved = [...grid.get(k)];
+    grid.set(k, []);
+    _pushUndo({ op: 'eraseAll', c, r, saved });
+}
+
+// ── 도구 ─────────────────────────────────────────────────────────────────────
+let currentTool = 'wall';
+const fanDirSymbols = { right:'→', left:'←', up:'↑', down:'↓' };
+const fanDirOrder   = ['right','left','up','down'];
+let fanDir = 'right';
+let movingSpeed = 1.2;
+let movingStep  = 0;
+let movingStart = null;
+
+// 스폰 지점 (에디터 표시용)
+let spawnMarker = null; // { c, r }
+
+// ── 좌표 변환 ─────────────────────────────────────────────────────────────────
+function screenToGrid(sx, sy) {
+    return { c: Math.max(0, Math.min(COLS-1, Math.floor(sx / CELL))),
+             r: Math.max(0, Math.min(ROWS-1, Math.floor((camY + sy) / CELL))) };
+}
+function gridToScreen(c, r) {
+    return { sx: c * CELL, sy: r * CELL - camY };
+}
+
+// ── 렌더링 ────────────────────────────────────────────────────────────────────
+let hoverC = null, hoverR = null;
+
+function render() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#0d0d18';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (canvas.width > MAP_W) {
+        ctx.fillStyle = '#06060f';
+        ctx.fillRect(MAP_W, 0, canvas.width - MAP_W, canvas.height);
+    }
+
+    const r0 = Math.floor(camY / CELL) - 1;
+    const r1 = Math.ceil((camY + canvas.height) / CELL) + 1;
+
+    ctx.strokeStyle = '#181830'; ctx.lineWidth = 1;
+    for (let c = 0; c <= COLS; c++) {
+        const x = c * CELL;
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+    }
+    for (let r = r0; r <= r1; r++) {
+        const y = r * CELL - camY;
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(MAP_W, y); ctx.stroke();
+    }
+
+    ctx.font = '9px monospace';
+    const step = CELL * 5;
+    for (let wy = Math.floor(camY / step) * step; wy <= camY + canvas.height + step; wy += step) {
+        const sy = wy - camY;
+        ctx.fillStyle = '#1a1a33'; ctx.fillRect(0, sy, MAP_W, 1);
+        ctx.fillStyle = '#445';   ctx.fillText(`y=${wy}`, MAP_W + 4, sy + 9);
+    }
+
+    const floorSy = MAP_H - camY;
+    if (floorSy > 0 && floorSy < canvas.height) {
+        ctx.fillStyle = 'rgba(255,80,80,0.5)'; ctx.fillRect(0, floorSy, MAP_W, 2);
+        ctx.fillStyle = '#f88'; ctx.font = '10px monospace'; ctx.fillText('MAP BOTTOM', 4, floorSy - 3);
+    }
+
+    // 맵 최상단 표시
+    const topSy = -camY;
+    if (topSy > -4 && topSy < canvas.height) {
+        ctx.fillStyle = 'rgba(80,220,80,0.5)'; ctx.fillRect(0, topSy, MAP_W, 2);
+        ctx.fillStyle = '#88ff88'; ctx.font = '10px monospace'; ctx.fillText('MAP TOP', 4, topSy + 12);
+    }
+
+    // 스테이지 경계선
+    for (const s of stages) {
+        const sy = s.topRow * CELL - camY;
+        if (sy < -2 || sy > canvas.height + 2) continue;
+        ctx.save();
+        ctx.strokeStyle = s.color; ctx.lineWidth = 2; ctx.setLineDash([10, 5]);
+        ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(MAP_W, sy); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = s.color;
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText(`◀ ${s.name}`, 4, sy - 4);
+        ctx.restore();
+    }
+
+    // 배치된 아이템
+    for (let r = r0; r <= r1; r++) {
+        for (let c = 0; c < COLS; c++) {
+            const items = getCell(c, r);
+            if (!items.length) continue;
+            const { sx, sy } = gridToScreen(c, r);
+            for (const item of items) drawItem(item, sx, sy);
+        }
+    }
+
+    // 이동 플랫폼 경로 선
+    for (const [, items] of grid) {
+        for (const item of items) {
+            if (item.type !== 'moving' || item.endC === undefined) continue;
+            const { sx:x1, sy:y1 } = gridToScreen(item.c, item.r);
+            const { sx:x2, sy:y2 } = gridToScreen(item.endC, item.endR);
+            ctx.strokeStyle = '#5577ff'; ctx.lineWidth = 1.5; ctx.setLineDash([5,4]);
+            ctx.beginPath(); ctx.moveTo(x1+CELL/2, y1+CELL/2); ctx.lineTo(x2+CELL/2, y2+CELL/2); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = '#5577ff';
+            ctx.beginPath(); ctx.arc(x2+CELL/2, y2+CELL/2, 4, 0, Math.PI*2); ctx.fill();
+        }
+    }
+
+    // 이동 플랫폼 첫 클릭 프리뷰
+    if (movingStep === 1 && movingStart) {
+        const { sx, sy } = gridToScreen(movingStart.c, movingStart.r);
+        ctx.strokeStyle = '#88aaff'; ctx.lineWidth = 2; ctx.setLineDash([3,3]);
+        ctx.strokeRect(sx+1, sy+1, CELL-2, CELL-2); ctx.setLineDash([]);
+        if (hoverC !== null) {
+            const { sx:hx, sy:hy } = gridToScreen(hoverC, hoverR);
+            ctx.strokeStyle = 'rgba(100,140,255,0.5)'; ctx.lineWidth=1.5; ctx.setLineDash([4,4]);
+            ctx.beginPath(); ctx.moveTo(sx+CELL/2, sy+CELL/2); ctx.lineTo(hx+CELL/2, hy+CELL/2); ctx.stroke();
+            ctx.setLineDash([]);
+        }
+    }
+
+    // 스폰 마커
+    if (spawnMarker) {
+        const { sx, sy } = gridToScreen(spawnMarker.c, spawnMarker.r);
+        ctx.fillStyle = 'rgba(100,255,100,0.25)';
+        ctx.fillRect(sx, sy, CELL, CELL);
+        ctx.strokeStyle = '#88ff88'; ctx.lineWidth = 2;
+        ctx.strokeRect(sx+1, sy+1, CELL-2, CELL-2);
+        ctx.fillStyle = '#88ff88'; ctx.font = 'bold 10px monospace';
+        ctx.fillText('START', sx+2, sy+14);
+    }
+
+    // 선택 범위
+    const drawSel = getSel();
+    if (drawSel) {
+        const sx1 = drawSel.c1 * CELL,      sy1 = drawSel.r1 * CELL - camY;
+        const sw  = (drawSel.c2 - drawSel.c1 + 1) * CELL;
+        const sh  = (drawSel.r2 - drawSel.r1 + 1) * CELL;
+        ctx.fillStyle = 'rgba(100,170,255,0.10)'; ctx.fillRect(sx1, sy1, sw, sh);
+        ctx.strokeStyle = 'rgba(100,180,255,0.85)'; ctx.lineWidth = 1.5;
+        ctx.setLineDash([6, 3]); ctx.strokeRect(sx1, sy1, sw, sh); ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(120,200,255,0.9)'; ctx.font = '9px monospace';
+        ctx.fillText(`${sw/CELL}×${sh/CELL}`, sx1 + 3, sy1 + 11);
+    }
+
+    // 붙여넣기 미리보기
+    if (pasteMode && clipboard && hoverC !== null) {
+        ctx.save(); ctx.globalAlpha = 0.5;
+        for (const e of clipboard.cells) {
+            const {sx, sy} = gridToScreen(hoverC + e.dc, hoverR + e.dr);
+            for (const item of e.items) drawItem(item, sx, sy);
+        }
+        ctx.restore();
+        const {sx: px0, sy: py0} = gridToScreen(hoverC, hoverR);
+        ctx.strokeStyle = '#88ff88'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
+        ctx.strokeRect(px0, py0, clipboard.width * CELL, clipboard.height * CELL);
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#88ff88'; ctx.font = '9px monospace';
+        ctx.fillText('클릭하여 붙여넣기', px0 + 3, py0 - 3);
+    }
+
+    // 호버
+    if (!pasteMode && hoverC !== null && hoverC < COLS) {
+        const { sx, sy } = gridToScreen(hoverC, hoverR);
+        ctx.fillStyle = 'rgba(255,255,255,0.06)';
+        ctx.fillRect(sx+1, sy+1, CELL-1, CELL-1);
+    }
+}
+
+function drawItem(item, sx, sy) {
+    const t = item.type;
+    if (t==='floor'||t==='wall') {
+        ctx.fillStyle='#1c1c28'; ctx.fillRect(sx, sy, CELL, CELL);
+        ctx.fillStyle='rgba(255,255,255,0.15)'; ctx.fillRect(sx, sy, CELL, 3); // top highlight
+        ctx.strokeStyle='rgba(0,0,0,0.5)'; ctx.lineWidth=1; ctx.strokeRect(sx,sy,CELL,CELL);
+        ctx.fillStyle='#5a6b7c'; ctx.font='bold 8px monospace'; ctx.fillText('WALL',sx+4,sy+CELL-6);
+    } else if (t.startsWith('floor_') || t.startsWith('wall_')) {
+        const subtype = t.split('_')[1];
+        const COLORS = {
+            breakable: ['#2d211f', 'BREAK', '#ccaa55'],
+            ice:       ['#1f2b35', 'ICE',   '#99ddff'],
+            save:      ['#212d26', 'SAVE',  '#77ffaa'],
+            goal:      ['#302a0a', 'GOAL',  '#ffee44'],
+        };
+        const [bg,label,labelColor] = COLORS[subtype] || ['#1c1c28','???','#fff'];
+        ctx.fillStyle=bg; ctx.fillRect(sx, sy, CELL, CELL);
+        ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.fillRect(sx, sy, CELL, 3);
+        ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.lineWidth=1; ctx.strokeRect(sx,sy,CELL,CELL);
+        ctx.fillStyle=labelColor; ctx.font='bold 8px monospace'; ctx.fillText(label,sx+4,sy+CELL-6);
+    } else if (t==='diag_r') {
+        ctx.fillStyle='#1c1c28';
+        ctx.beginPath(); ctx.moveTo(sx,sy+CELL); ctx.lineTo(sx+CELL,sy); ctx.lineTo(sx+CELL,sy+CELL); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle='rgba(255,255,255,0.25)'; ctx.lineWidth=3;
+        ctx.beginPath(); ctx.moveTo(sx,sy+CELL-1.5); ctx.lineTo(sx+CELL,sy-1.5); ctx.stroke();
+        ctx.fillStyle='#6a7b8c'; ctx.font='10px monospace'; ctx.fillText('/',sx+CELL/2-3,sy+CELL-4);
+    } else if (t==='diag_l') {
+        ctx.fillStyle='#1c1c28';
+        ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(sx+CELL,sy+CELL); ctx.lineTo(sx,sy+CELL); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle='rgba(255,255,255,0.25)'; ctx.lineWidth=3;
+        ctx.beginPath(); ctx.moveTo(sx,sy+1.5); ctx.lineTo(sx+CELL,sy+CELL+1.5); ctx.stroke();
+        ctx.fillStyle='#6a7b8c'; ctx.font='10px monospace'; ctx.fillText('\\',sx+4,sy+CELL-4);
+    } else if (t==='trap') {
+        const cx=sx+CELL/2, cy=sy+CELL/2, r=13;
+        ctx.fillStyle='#991100';
+        ctx.beginPath(); ctx.moveTo(cx,cy-r); ctx.lineTo(cx+r,cy); ctx.lineTo(cx,cy+r); ctx.lineTo(cx-r,cy); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle='#ff5533'; ctx.lineWidth=1.5; ctx.stroke();
+        ctx.fillStyle='#fff'; ctx.font='bold 11px monospace'; ctx.fillText('!',cx-4,cy+4);
+    } else if (t==='fan') {
+        ctx.fillStyle='#1a2a3a'; ctx.fillRect(sx+4,sy+4,CELL-8,CELL-8);
+        ctx.strokeStyle='#4488aa'; ctx.lineWidth=1.5; ctx.strokeRect(sx+4,sy+4,CELL-8,CELL-8);
+        const cx=sx+CELL/2, cy=sy+CELL/2;
+        const DV={right:[1,0],left:[-1,0],up:[0,-1],down:[0,1]};
+        const [dx,dy]=DV[item.dir]||DV.right;
+        ctx.strokeStyle='#55bbee'; ctx.lineWidth=2;
+        ctx.beginPath(); ctx.moveTo(cx-dx*9,cy-dy*9); ctx.lineTo(cx+dx*9,cy+dy*9); ctx.stroke();
+        ctx.fillStyle='#55bbee';
+        ctx.beginPath();
+        ctx.moveTo(cx+dx*9,cy+dy*9);
+        ctx.lineTo(cx+dx*9-dy*5-dx*5,cy+dy*9+dx*5-dy*5);
+        ctx.lineTo(cx+dx*9+dy*5-dx*5,cy+dy*9-dx*5-dy*5);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle='#5599bb'; ctx.font='8px monospace'; ctx.fillText('FAN',sx+5,sy+CELL-3);
+    } else if (t==='moving') {
+        ctx.fillStyle='#1a2255'; ctx.fillRect(sx,sy,CELL,14);
+        ctx.fillStyle='#3355aa'; ctx.fillRect(sx,sy,CELL,4);
+        ctx.fillStyle='#aabbff'; ctx.font='8px monospace'; ctx.fillText('MOV',sx+3,sy+12);
+        if (item.speed!=null) { ctx.fillStyle='#7799cc'; ctx.fillText(String(item.speed),sx+CELL-14,sy+12); }
+    }
+}
+
+// ── 범위 선택 / 복사·붙여넣기 ────────────────────────────────────────────────
+let selDragging = false;   // Shift 드래그 중
+let selAnchor   = null;    // 드래그 시작 셀 {c,r}
+let selEnd_     = null;    // 드래그 끝 셀   {c,r}
+let selection   = null;    // 확정된 범위    {c1,r1,c2,r2}
+let clipboard   = null;    // {width,height, cells:[{dc,dr,items}]}
+let pasteMode   = false;   // Ctrl+V 후 클릭 대기
+
+function getSel() {
+    const a = selDragging ? selAnchor  : (selection ? { c: selection.c1, r: selection.r1 } : null);
+    const b = selDragging ? selEnd_    : (selection ? { c: selection.c2, r: selection.r2 } : null);
+    if (!a || !b) return null;
+    return { c1: Math.min(a.c,b.c), r1: Math.min(a.r,b.r),
+             c2: Math.max(a.c,b.c), r2: Math.max(a.r,b.r) };
+}
+function clearSel() {
+    selDragging = false; selAnchor = null; selEnd_ = null; selection = null; pasteMode = false;
+    render();
+}
+function fillSel(toolType) {
+    const s = getSel(); if (!s) return;
+    beginBatch();
+    for (let r = s.r1; r <= s.r2; r++)
+        for (let c = s.c1; c <= s.c2; c++)
+            addItem(c, r, { type: toolType, ...(toolType === 'fan' && { dir: fanDir }) });
+    endBatch();
+    render();
+}
+function eraseSel() {
+    const s = getSel(); if (!s) return;
+    beginBatch();
+    for (let r = s.r1; r <= s.r2; r++)
+        for (let c = s.c1; c <= s.c2; c++)
+            eraseAll(c, r);
+    endBatch();
+    render();
+}
+function copySel() {
+    const s = getSel(); if (!s) return;
+    const cells = [];
+    for (let r = s.r1; r <= s.r2; r++)
+        for (let c = s.c1; c <= s.c2; c++) {
+            const items = getCell(c, r);
+            if (items.length) cells.push({ dc: c - s.c1, dr: r - s.r1, items: JSON.parse(JSON.stringify(items)) });
+        }
+    clipboard = { width: s.c2 - s.c1 + 1, height: s.r2 - s.r1 + 1, cells };
+}
+function pasteTo(anchorC, anchorR) {
+    if (!clipboard) return;
+    beginBatch();
+    for (const e of clipboard.cells) {
+        const c = anchorC + e.dc, r = anchorR + e.dr;
+        if (c < 0 || c >= COLS || r < 0 || r >= ROWS) continue;
+        for (const item of e.items) addItem(c, r, { ...item });
+    }
+    endBatch();
+    render();
+}
+
+// ── 마우스 이벤트 ─────────────────────────────────────────────────────────────
+let mouseDown = false, lastKey = null;
+
+canvas.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    if (selection || selDragging || pasteMode) { clearSel(); return; }
+    const {c,r} = screenToGrid(e.offsetX, e.offsetY);
+    eraseAll(c, r); render();
+});
+canvas.addEventListener('mousedown', e => {
+    if (e.button === 2) return; // contextmenu가 처리
+    if (e.button !== 0) return;
+
+    const {c,r} = screenToGrid(e.offsetX, e.offsetY);
+
+    // Paste mode: 클릭 위치에 붙여넣기
+    if (pasteMode) {
+        pasteTo(c, r);
+        pasteMode = false;
+        render(); return;
+    }
+
+    // Shift: 범위 선택 시작
+    if (e.shiftKey) {
+        selDragging = true; mouseDown = true;
+        selAnchor = {c, r}; selEnd_ = {c, r};
+        selection = null;
+        render(); return;
+    }
+
+    mouseDown = true; lastKey = null;
+    paint(e.offsetX, e.offsetY, true);
+});
+canvas.addEventListener('mousemove', e => {
+    const {c,r} = screenToGrid(e.offsetX, e.offsetY);
+    hoverC = c; hoverR = r;
+    updateStatus(c, r);
+    if (mouseDown && selDragging) { selEnd_ = {c, r}; render(); return; }
+    if (mouseDown) paint(e.offsetX, e.offsetY, false);
+    else render();
+});
+canvas.addEventListener('mouseup', () => {
+    if (selDragging) {
+        selection = getSel();
+        selDragging = false;
+    }
+    mouseDown = false; lastKey = null;
+});
+canvas.addEventListener('mouseleave', () => { hoverC = null; hoverR = null; render(); });
+
+function paint(sx, sy, isFirst) {
+    const {c,r} = screenToGrid(sx, sy);
+    const k = cellKey(c,r);
+
+    // 스폰 선택 모드
+    if (currentTool === 'spawn') {
+        spawnMarker = {c, r};
+        render();
+        startPlay(c * CELL, r * CELL);
+        return;
+    }
+
+    if (currentTool==='erase') { eraseAll(c,r); render(); return; }
+
+    if (currentTool==='moving') {
+        if (!isFirst) return;
+        if (movingStep===0) { movingStart={c,r}; movingStep=1; }
+        else {
+            addItem(movingStart.c, movingStart.r, {
+                type:'moving', c:movingStart.c, r:movingStart.r, endC:c, endR:r, speed:movingSpeed
+            });
+            movingStep=0; movingStart=null;
+        }
+        render(); return;
+    }
+
+    if (k===lastKey) return;
+    lastKey=k;
+    addItem(c, r, { type:currentTool, ...(currentTool==='fan' && {dir:fanDir}) });
+    render();
+}
+
+// ── 휠 스크롤 ─────────────────────────────────────────────────────────────────
+canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    camY = Math.max(0, Math.min(MAP_H - canvas.height, camY + e.deltaY * 2));
+    render();
+    document.getElementById('stCam').textContent = `camY:${Math.round(camY)}`;
+}, {passive:false});
+
+// ── 키보드 ────────────────────────────────────────────────────────────────────
+const TOOL_KEYS = {w:'wall',f:'wall',b:'wall_breakable',i:'wall_ice',s:'wall_save',
+                   g:'wall_goal',t:'trap',n:'fan',m:'moving',e:'erase'};
+window.addEventListener('keydown', ev => {
+    // 플레이 중이면 에디터 키 무시
+    if (document.getElementById('playOverlay').classList.contains('show')) return;
+
+    if (ev.ctrlKey && ev.key.toLowerCase()==='s') { ev.preventDefault(); saveFile(); return; }
+    if (ev.ctrlKey && ev.key.toLowerCase()==='z') { ev.preventDefault(); undo(); return; }
+    if (ev.ctrlKey && ev.key.toLowerCase()==='c') { ev.preventDefault(); copySel(); return; }
+    if (ev.ctrlKey && ev.key.toLowerCase()==='v') {
+        ev.preventDefault();
+        if (clipboard) { pasteMode = true; render(); }
+        return;
+    }
+
+    const k = ev.key;
+    if (k.toLowerCase()==='p') { enterSpawnMode(); return; }
+
+    // 선택 범위가 있을 때 도구 키 → 범위 채우기
+    if (getSel()) {
+        if (k==='/' || k==='\\') {
+            fillSel(k==='/' ? 'diag_r' : 'diag_l'); return;
+        }
+        if (k.toLowerCase()==='e') { eraseSel(); clearSel(); return; }
+        if (TOOL_KEYS[k.toLowerCase()]) { fillSel(TOOL_KEYS[k.toLowerCase()]); return; }
+        if (k==='Escape') { clearSel(); return; }
+    } else {
+        if (k==='/') { selectTool('diag_r'); return; }
+        if (k==='\\') { selectTool('diag_l'); return; }
+        if (TOOL_KEYS[k.toLowerCase()]) { selectTool(TOOL_KEYS[k.toLowerCase()]); return; }
+    }
+
+    if (k.toLowerCase()==='d' && currentTool==='fan') {
+        const idx=fanDirOrder.indexOf(fanDir);
+        fanDir=fanDirOrder[(idx+1)%fanDirOrder.length];
+        document.getElementById('fanDirBtn').textContent=`dir:${fanDirSymbols[fanDir]} [D]`;
+    }
+    if ((k==='+'||k==='=') && currentTool==='moving') {
+        movingSpeed=Math.min(5,+(movingSpeed+0.1).toFixed(1));
+        document.getElementById('movSpeedLabel').textContent=`spd:${movingSpeed} [±]`;
+    }
+    if (k==='-' && currentTool==='moving') {
+        movingSpeed=Math.max(0.2,+(movingSpeed-0.1).toFixed(1));
+        document.getElementById('movSpeedLabel').textContent=`spd:${movingSpeed} [±]`;
+    }
+    if (k==='Escape') { movingStep=0; movingStart=null; exitSpawnMode(); clearSel(); render(); }
+    if (k==='ArrowDown') { camY=Math.min(MAP_H-canvas.height, camY+CELL*4); render(); }
+    if (k==='ArrowUp')   { camY=Math.max(0, camY-CELL*4); render(); }
+});
+
+function selectTool(tool) {
+    currentTool=tool;
+    if (tool!=='moving') { movingStep=0; movingStart=null; }
+    document.body.classList.remove('spawn-mode');
+    document.querySelectorAll('.tool-btn[data-tool]').forEach(b =>
+        b.classList.toggle('active', b.dataset.tool===tool)
+    );
+    render();
+}
+document.querySelectorAll('.tool-btn[data-tool]').forEach(btn =>
+    btn.addEventListener('click', ()=>selectTool(btn.dataset.tool))
+);
+document.getElementById('fanDirBtn').addEventListener('click', ()=>{
+    const idx=fanDirOrder.indexOf(fanDir);
+    fanDir=fanDirOrder[(idx+1)%fanDirOrder.length];
+    document.getElementById('fanDirBtn').textContent=`dir:${fanDirSymbols[fanDir]} [D]`;
+});
+
+// ── 스폰 모드 진입/해제 ───────────────────────────────────────────────────────
+function enterSpawnMode() {
+    currentTool = 'spawn';
+    document.body.classList.add('spawn-mode');
+    document.querySelectorAll('.tool-btn[data-tool]').forEach(b=>b.classList.remove('active'));
+    document.getElementById('btnPlay').classList.add('active');
+    document.getElementById('stCell').textContent = '클릭으로 스폰 위치 지정 → 플레이 시작';
+    render();
+}
+function exitSpawnMode() {
+    if (currentTool==='spawn') { currentTool='wall'; selectTool('wall'); }
+    document.body.classList.remove('spawn-mode');
+    document.getElementById('btnPlay').classList.remove('active');
+}
+
+document.getElementById('btnPlay').addEventListener('click', enterSpawnMode);
+
+// ── 상태바 ────────────────────────────────────────────────────────────────────
+function updateStatus(c, r) {
+    document.getElementById('stCoord').textContent=`col:${c} row:${r} | worldX:${c*CELL} worldY:${r*CELL}`;
+    const items=getCell(c,r);
+    document.getElementById('stCell').textContent='cell: '+(items.length?items.map(i=>i.type+(i.dir?`(${i.dir})`:'')).join(', '):'(empty)');
+    document.getElementById('stCam').textContent=`camY:${Math.round(camY)}`;
+}
+
+// ── 저장 / 불러오기 ───────────────────────────────────────────────────────────
+function saveFile() {
+    const cells = [];
+    for (const [k, v] of grid) if (v.length) cells.push([k, v]);
+    const data = { cells, rows: ROWS, stages };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'njk_map.json'; a.click();
+    URL.revokeObjectURL(url);
+}
+function loadFile() {
+    const input = document.createElement('input'); input.type = 'file'; input.accept = '.json';
+    input.onchange = e => {
+        const file = e.target.files[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+            try {
+                const raw = JSON.parse(ev.target.result);
+                grid.clear(); undoStack.length = 0;
+                // 구버전(배열) / 신버전(객체) 둘 다 지원
+                if (Array.isArray(raw)) {
+                    for (const [k, v] of raw) grid.set(k, v);
+                } else {
+                    for (const [k, v] of raw.cells) grid.set(k, v);
+                    if (raw.rows) { ROWS = raw.rows; MAP_H = ROWS * CELL; }
+                    stages = raw.stages || [];
+                }
+                camY = Math.max(0, Math.min(MAP_H - canvas.height, MAP_H - canvas.height));
+                renderStageList();
+                render();
+            } catch (err) { alert('파일 읽기 실패: ' + err.message); }
+        };
+        reader.readAsText(file);
+    };
+    input.click();
+}
+document.getElementById('btnSave').addEventListener('click', saveFile);
+document.getElementById('btnLoad').addEventListener('click', loadFile);
+document.getElementById('btnUndo').addEventListener('click', undo);
+document.getElementById('btnClear').addEventListener('click', ()=>{
+    if(confirm('전부 지울까요?')){ grid.clear(); undoStack.length=0; render(); }
+});
+
+// 맵 확장 버튼
+document.getElementById('btnAddScreen').addEventListener('click', addScreenToTop);
+document.getElementById('addScreenBtn').addEventListener('click', addScreenToTop);
+
+// 스테이지 패널
+const stagePanel = document.getElementById('stagePanel');
+document.getElementById('btnStages').addEventListener('click', () => {
+    stagePanel.classList.toggle('show');
+});
+document.getElementById('btnAddStage').addEventListener('click', () => {
+    // 현재 화면 중앙에 해당하는 row
+    const midRow = Math.floor((camY + canvas.height * 0.4) / CELL);
+    addStageAtRow(Math.max(0, Math.min(ROWS - 1, midRow)));
+});
+
+// ── Export ────────────────────────────────────────────────────────────────────
+function buildGameData() {
+    const platforms=[], fans=[], traps=[];
+    for (const [key,items] of grid) {
+        if(!items.length) continue;
+        const [cs,rs]=key.split(','); const col=+cs,row=+rs;
+        const wx=col*CELL, wy=row*CELL;
+        for (const item of items) {
+            const t=item.type;
+            if(t==='wall' || t==='floor')          platforms.push({x:wx,y:wy,w:CELL,h:CELL,type:'wall'});
+            else if(t==='wall_breakable' || t==='floor_breakable') platforms.push({x:wx,y:wy,w:CELL,h:CELL,type:'wall',gimmick:'breakable',broken:false,standTimer:0,respawnTimer:0});
+            else if(t==='wall_ice' || t==='floor_ice') platforms.push({x:wx,y:wy,w:CELL,h:CELL,type:'wall',gimmick:'ice'});
+            else if(t==='wall_save' || t==='floor_save')platforms.push({x:wx,y:wy,w:CELL,h:CELL,type:'save'});
+            else if(t==='wall_goal' || t==='floor_goal')platforms.push({x:wx,y:wy,w:CELL,h:CELL,type:'goal'});
+            else if(t==='diag_r')    platforms.push({x:wx,y:wy,w:CELL,h:CELL,type:'diag_r'});
+            else if(t==='diag_l')    platforms.push({x:wx,y:wy,w:CELL,h:CELL,type:'diag_l'});
+            else if(t==='trap')      traps.push({x:wx+CELL/2-20,y:wy+CELL/2-20,w:40,h:40,bounceVX:8,bounceVY:-15});
+            else if(t==='fan'){
+                const DV={right:{windX:3.5,windY:0},left:{windX:-3.5,windY:0},up:{windX:0,windY:-2},down:{windX:0,windY:2}};
+                const d=DV[item.dir]||DV.right;
+                fans.push({x:wx+5,y:wy+5,w:CELL-10,h:CELL-10,...d,range:280});
+            } else if(t==='moving'){
+                const ec=item.endC??col, er=item.endR??row;
+                const ex=ec*CELL, ey=er*CELL;
+                const axis=(ex!==wx)?'x':'y';
+                const lo=axis==='x'?Math.min(wx,ex):Math.min(wy,ey);
+                const hi=axis==='x'?Math.max(wx,ex):Math.max(wy,ey);
+                platforms.push({x:wx,y:wy,w:CELL,h:14,type:'normal',gimmick:'moving',
+                    moveAxis:axis,moveMin:lo,moveMax:hi,moveSpeed:item.speed||1.2,moveDir:1});
+            }
+        }
+    }
+    // 부서지는 바닥에 런타임 필드 추가
+    platforms.forEach(p=>{ if(!p.hasOwnProperty('broken')){ p.broken=false; p.standTimer=0; p.respawnTimer=0; } });
+    return {platforms, fans, traps};
+}
+
+function buildExport() {
+    const {platforms,fans,traps}=buildGameData();
+    platforms.sort((a,b)=>b.y-a.y);
+    const pStr=p=>{
+        let s=`  { x:${p.x}, y:${p.y}, w:${p.w}, h:${p.h}, type:'${p.type}'`;
+        if(p.gimmick) s+=`, gimmick:'${p.gimmick}'`;
+        if(p.moveAxis) s+=`, moveAxis:'${p.moveAxis}', moveMin:${p.moveMin}, moveMax:${p.moveMax}, moveSpeed:${p.moveSpeed}, moveDir:1`;
+        return s+' }';
+    };
+    return [
+        `// 플랫폼: ${platforms.length}  팬: ${fans.length}  함정: ${traps.length}`,
+        'const PLATFORMS_DEF = [', platforms.map(pStr).join(',\n'), '];','',
+        'const FANS = [', fans.map(f=>`  { x:${f.x}, y:${f.y}, w:${f.w}, h:${f.h}, windX:${f.windX}, windY:${f.windY}, range:${f.range} }`).join(',\n'), '];','',
+        'const TRAPS = [', traps.map(t=>`  { x:${t.x}, y:${t.y}, w:${t.w}, h:${t.h}, bounceVX:${t.bounceVX}, bounceVY:${t.bounceVY} }`).join(',\n'), '];',
+    ].join('\n');
+}
+
+document.getElementById('btnExport').addEventListener('click',()=>{
+    document.getElementById('exportText').value=buildExport();
+    document.getElementById('overlay').classList.add('show');
+});
+document.getElementById('btnClose').addEventListener('click',()=>document.getElementById('overlay').classList.remove('show'));
+document.getElementById('btnCopy').addEventListener('click',()=>
+    navigator.clipboard.writeText(document.getElementById('exportText').value).then(()=>alert('복사됨!'))
+);
+
+
+// ═══════════════════════════════════════════════════════════
+//  PLAY ENGINE  (GameEngine + Renderer 공유)
+// ═══════════════════════════════════════════════════════════
+
+const pCanvas  = document.getElementById('playCanvas');
+const playOverlayEl = document.getElementById('playOverlay');
+pCanvas.width  = window.innerWidth;
+pCanvas.height = window.innerHeight;
+
+let playEngine   = null;
+let playRenderer = null;
+let pRafId       = null;
+let pLastTime    = 0;
+const pKeys      = {};
+
+// 플레이 키 입력
+window.addEventListener('keydown', ev => {
+    if (!playOverlayEl.classList.contains('show')) return;
+    if (['Space','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(ev.code)) ev.preventDefault();
+    if (ev.code === 'Escape') { stopPlay(); return; }
+    if (pKeys[ev.code]) return;
+    pKeys[ev.code] = true;
+    playEngine?.onKeydown(ev.code);
+});
+window.addEventListener('keyup', ev => {
+    if (!playOverlayEl.classList.contains('show')) return;
+    pKeys[ev.code] = false;
+    playEngine?.onKeyup(ev.code, pKeys);
+});
+
+async function startPlay(spawnWorldX, spawnWorldY) {
+    exitSpawnMode();
+
+    const data = buildGameData();
+
+    playEngine = new GameEngine({
+        canvasW:  window.innerWidth,
+        canvasH:  window.innerHeight,
+        platforms: data.platforms,
+        fans:      data.fans,
+        traps:     data.traps,
+        mapH:      MAP_H,
+        savePlatformY: null, // 에디터 플레이는 세이브포인트 없음
+    });
+
+    playRenderer = new Renderer({
+        canvas:          pCanvas,
+        engine:          playEngine,
+        spritesBasePath: 'assets/sprites/',
+        mode:            'editor',
+    });
+
+    playEngine.spawn(spawnWorldX, spawnWorldY - playEngine.HITBOX_H);
+
+    document.getElementById('playMsg').textContent = '';
+    playOverlayEl.classList.add('show');
+
+    // 스프라이트 로딩 (실패해도 플레이 가능)
+    playRenderer.loadSprites().catch(() => {});
+
+    if (pRafId) cancelAnimationFrame(pRafId);
+    pRafId = requestAnimationFrame(ts => { pLastTime = ts; playLoop(ts); });
+}
+
+function stopPlay() {
+    if (pRafId) { cancelAnimationFrame(pRafId); pRafId = null; }
+    for (const k of Object.keys(pKeys)) pKeys[k] = false;
+    playOverlayEl.classList.remove('show');
+    render();
+}
+
+function showPlayMsg(txt) {
+    document.getElementById('playMsg').textContent = txt;
+}
+
+function playLoop(ts) {
+    const dt = Math.min(ts - pLastTime, 50); pLastTime = ts;
+    playEngine.tick(dt, pKeys);
+
+    // 이벤트 처리
+    if (playEngine.lastEvent === 'goal') {
+        showPlayMsg('🎉 GOAL!');
+    } else if (playEngine.lastEvent === 'respawn') {
+        showPlayMsg('리스폰');
+        setTimeout(() => showPlayMsg(''), 1500);
+    }
+    playEngine.lastEvent = null;
+
+    playRenderer.render();
+
+    // 스폰 마커 오버레이 (에디터 전용)
+    const pCtx = playRenderer.ctx;
+    const markerSy = playEngine.spawnPy - playEngine.cameraY;
+    if (markerSy > -20 && markerSy < pCanvas.height + 20) {
+        pCtx.strokeStyle = 'rgba(100,255,100,0.4)';
+        pCtx.lineWidth = 1; pCtx.setLineDash([4, 4]);
+        pCtx.strokeRect(playEngine.spawnPx, markerSy, playEngine.HITBOX_W, playEngine.HITBOX_H);
+        pCtx.setLineDash([]);
+    }
+
+    pRafId = requestAnimationFrame(playLoop);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  시작
+// ═══════════════════════════════════════════════════════════
+resizeCanvas();
+// 초기 camY: 1화면이므로 맨 아래(바닥) = 0
+camY = 0;
+</script>
+</body>
+</html>

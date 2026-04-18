@@ -3,19 +3,6 @@ import {
     MIN_VY, MAX_VY, MAX_VX, CELL, CHAR_SCALE, HITBOX_W_RATIO, HITBOX_H_RATIO,
 } from './constants.js';
 
-// ── 스테이지별 배경 그라디언트 색상 ─────────────────────────────────────────────
-export function getStageBg(worldY) {
-    if (worldY > 6700) return ['#120800', '#1a0e00'];
-    if (worldY > 5900) return ['#050814', '#100f1a']; // S1: 무대 단상 (어두운 조명 배경)
-    if (worldY > 5100) return ['#200808', '#300a0a']; // S2: 붉은 천막
-    if (worldY > 4300) return ['#0f1218', '#1c222c']; // S3: 직원 사무실 (회청색)
-    if (worldY > 3500) return ['#1a0505', '#280808']; // S4: 서커스
-    if (worldY > 2700) return ['#071407', '#0d200d']; // S5: 숲 하층
-    if (worldY > 1900) return ['#1e3b52', '#3d6c82']; // S6: 숲 정상 + 하늘 (푸른빛이 감도는 상층)
-    if (worldY > 1100) return ['#4a90e2', '#87cefa']; // S7: 완전한 하늘 (밝은 낮 하늘)
-    return               ['#050510', '#0a0a1a']; // S8: 우주 밤하늘
-}
-
 // ── 플랫폼 시각적 병합 (Greedy Meshing): 인접한 동일 블록들을 하나의 큰 덩어리로 융합 ──
 export function mergeVisualPlatforms(platforms) {
     const isMergeable = p => {
@@ -115,10 +102,11 @@ export class GameEngine {
      *   canvasW: number, canvasH: number,
      *   platforms: object[], fans: object[], traps: object[],
      *   mapH: number,
-     *   savePlatformY?: number|null
+     *   savePlatformY?: number|null,
+     *   stages?: object[]|null
      * }} opts
      */
-    constructor({ canvasW, canvasH, platforms, fans, traps, mapH, savePlatformY = null }) {
+    constructor({ canvasW, canvasH, platforms, fans, traps, mapH, savePlatformY = null, stages = null }) {
         this.CANVAS_W = canvasW;
         this.CANVAS_H = canvasH;
         this.MAP_W    = Math.floor(canvasW / CELL) * CELL;
@@ -138,6 +126,7 @@ export class GameEngine {
         this.fans          = fans;
         this.traps         = traps;
         this.savePlatformY = savePlatformY;
+        this.stages        = stages;
 
         // 게임 상태
         this.state        = 'stand';
@@ -226,17 +215,41 @@ export class GameEngine {
     }
 
     _framesUntilLanding(sx, sy, svx, svy, max = 300) {
-        const { HITBOX_W, HITBOX_H } = this;
+        const { HITBOX_W, HITBOX_H, FOOT_OFFSET } = this;
         let x = sx, y = sy, lvx = svx, lvy = svy;
         for (let f = 1; f <= max; f++) {
+            const prevX = x, prevY = y;
             const prevBot = y + HITBOX_H;
-            lvy += GRAVITY; x += lvx; y += lvy;
+            lvy += GRAVITY;
+            if (lvy > 16) lvy = 16; // 터미널 벨로시티 동기화
+            x += lvx; y += lvy;
             x = this.wrapX(x);
-            if (lvy > 0) {
-                for (const p of this.platforms) {
-                    if (p.broken) continue;
-                    if (x + HITBOX_W <= p.x || x >= p.x + p.w) continue;
-                    if (prevBot <= p.y && y + HITBOX_H >= p.y) return f;
+
+            for (const p of this.physPlatforms) {
+                if (p.broken) continue;
+                if (p.type === 'diag_r' || p.type === 'diag_l') continue;
+                if (x + HITBOX_W <= p.x || x >= p.x + p.w) continue;
+                if (y + HITBOX_H <= p.y || y >= p.y + p.h) continue;
+
+                // 착지 판정 (실제 물리와 동일한 FOOT_OFFSET 적용)
+                if (lvy > 0 && prevBot <= p.y) {
+                    if (x + HITBOX_W - FOOT_OFFSET <= p.x || x + FOOT_OFFSET >= p.x + p.w) continue;
+                    return f;
+                }
+                // 머리 박기 시뮬레이션
+                if (lvy < 0 && prevY >= p.y + p.h) {
+                    y = p.y + p.h; lvy = Math.abs(lvy) * 0.5;
+                    break;
+                }
+                // 오른쪽 벽 충돌 시뮬레이션
+                if (lvx > 0 && prevX + HITBOX_W <= p.x) {
+                    x = p.x - HITBOX_W; lvx = -Math.abs(lvx) * 0.5;
+                    break;
+                }
+                // 왼쪽 벽 충돌 시뮬레이션
+                if (lvx < 0 && prevX >= p.x + p.w) {
+                    x = p.x + p.w; lvx = Math.abs(lvx) * 0.5;
+                    break;
                 }
             }
         }
@@ -253,10 +266,17 @@ export class GameEngine {
         const avail  = Math.max(total - 18, 1);
         this.startFrameDur = Math.max((avail * (1000 / 60)) / SPRITE_INFO.start.frames, 8);
         this.standingOn    = null;
+        this._endPredicted  = false;
         this._changeState('start');
     }
 
     _handleMovement(keys) {
+        if (this.state === 'ready') {
+            this.px += this.onMovingDelta.x;
+            this.py += this.onMovingDelta.y;
+            this.px  = this.wrapX(this.px);
+            return;
+        }
         if (this.state !== 'stand' && this.state !== 'run' && this.state !== 'end') return;
 
         if (this.state === 'end') {
@@ -293,9 +313,7 @@ export class GameEngine {
             if (this.state === 'run') this._changeState('stand');
         }
 
-        if (Math.abs(this.px - prevX) < this.MAP_W / 2) {
-            this._resolveWallCollisions(prevX, keys);
-        }
+        this._resolveWallCollisions(prevX, keys);
         this._checkFallOff();
     }
 
@@ -304,26 +322,65 @@ export class GameEngine {
         for (const p of this.physPlatforms) {
             if (p.broken) continue;
             if (p.type === 'diag_r' || p.type === 'diag_l') continue;
-            if (this.px + this.HITBOX_W <= p.x || this.px >= p.x + p.w) continue;
-            if (Math.abs(foot - p.y) <= 4) return;
+            if (Math.abs(foot - p.y) > 4) continue;
+
+            let p_x = p.x;
+            const playerCenter = this.px + this.HITBOX_W / 2;
+            const pCenter = p.x + p.w / 2;
+            if (playerCenter - pCenter > this.MAP_W / 2) p_x += this.MAP_W;
+            else if (pCenter - playerCenter > this.MAP_W / 2) p_x -= this.MAP_W;
+
+            if (this.px + this.HITBOX_W <= p_x || this.px >= p_x + p.w) continue;
+            return;
         }
         this.standingOn = null;
         this._changeState('start');
     }
 
     _resolveWallCollisions(prevX, keys) {
-        const { HITBOX_W, HITBOX_H } = this;
+        const { HITBOX_W, HITBOX_H, FOOT_OFFSET } = this;
+        let effPx = this.px;
+        if (prevX - this.px > this.MAP_W / 2) effPx += this.MAP_W;
+        else if (this.px - prevX > this.MAP_W / 2) effPx -= this.MAP_W;
+
         for (const p of this.physPlatforms) {
             if (p.broken) continue;
-            if (p.type === 'diag_r' || p.type === 'diag_l') continue;
             if (this.py + HITBOX_H <= p.y || this.py >= p.y + p.h) continue;
-            if (prevX + HITBOX_W <= p.x && this.px + HITBOX_W > p.x) {
-                this.px = p.x - HITBOX_W; if (!keys['ArrowLeft']) this.vx = 0; break;
-            }
-            if (prevX >= p.x + p.w && this.px < p.x + p.w) {
-                this.px = p.x + p.w; if (!keys['ArrowRight']) this.vx = 0; break;
+
+            let p_x = p.x;
+            const playerCenter = effPx + HITBOX_W / 2;
+            const pCenter = p.x + p.w / 2;
+            if (playerCenter - pCenter > this.MAP_W / 2) p_x += this.MAP_W;
+            else if (pCenter - playerCenter > this.MAP_W / 2) p_x -= this.MAP_W;
+
+            if (p.type === 'diag_r') {
+                if (prevX >= p_x + p.w && effPx < p_x + p.w) {
+                    effPx = p_x + p.w; if (!keys['ArrowRight']) this.vx = 0; break;
+                }
+                const minFootY = Math.min(p.y + p.h, this.py + HITBOX_H);
+                const maxFootR = p_x + p.w * Math.max(0, 1 - (minFootY - p.y) / p.h);
+                if (effPx + HITBOX_W - FOOT_OFFSET > maxFootR && prevX + HITBOX_W - FOOT_OFFSET <= maxFootR) {
+                    effPx = maxFootR - HITBOX_W + FOOT_OFFSET; if (!keys['ArrowLeft']) this.vx = 0; break;
+                }
+            } else if (p.type === 'diag_l') {
+                if (prevX + HITBOX_W <= p_x && effPx + HITBOX_W > p_x) {
+                    effPx = p_x - HITBOX_W; if (!keys['ArrowLeft']) this.vx = 0; break;
+                }
+                const minFootY = Math.min(p.y + p.h, this.py + HITBOX_H);
+                const minFootL = p_x + p.w * Math.min(1, (minFootY - p.y) / p.h);
+                if (effPx + FOOT_OFFSET < minFootL && prevX + FOOT_OFFSET >= minFootL) {
+                    effPx = minFootL - FOOT_OFFSET; if (!keys['ArrowRight']) this.vx = 0; break;
+                }
+            } else {
+                if (prevX + HITBOX_W <= p_x && effPx + HITBOX_W > p_x) {
+                    effPx = p_x - HITBOX_W; if (!keys['ArrowLeft']) this.vx = 0; break;
+                }
+                if (prevX >= p_x + p.w && effPx < p_x + p.w) {
+                    effPx = p_x + p.w; if (!keys['ArrowRight']) this.vx = 0; break;
+                }
             }
         }
+        this.px = this.wrapX(effPx);
     }
 
     _updatePhysics() {
@@ -333,6 +390,7 @@ export class GameEngine {
 
         const prevX = this.px, prevY = this.py;
         this.vy += GRAVITY;
+        if (this.vy > 16) this.vy = 16; // 최대 낙하 속도(Terminal Velocity) 제한
         this.px += this.vx;
         this.py += this.vy;
         this.px  = this.wrapX(this.px);
@@ -364,17 +422,29 @@ export class GameEngine {
             }
         }
 
+        let effPx = this.px;
+        if (prevX - this.px > this.MAP_W / 2) effPx += this.MAP_W;
+        else if (this.px - prevX > this.MAP_W / 2) effPx -= this.MAP_W;
+
         for (const p of this.physPlatforms) {
             if (p.broken) continue;
             if (p.type === 'diag_r' || p.type === 'diag_l') continue;
-            if (this.px + HITBOX_W <= p.x || this.px >= p.x + p.w) continue;
+
+            let p_x = p.x;
+            const playerCenter = effPx + HITBOX_W / 2;
+            const pCenter = p.x + p.w / 2;
+            if (playerCenter - pCenter > this.MAP_W / 2) p_x += this.MAP_W;
+            else if (pCenter - playerCenter > this.MAP_W / 2) p_x -= this.MAP_W;
+
+            if (effPx + HITBOX_W <= p_x || effPx >= p_x + p.w) continue;
             if (this.py + HITBOX_H <= p.y || this.py >= p.y + p.h) continue;
 
             const prevBot = prevY + HITBOX_H;
 
             // 착지
             if (this.vy > 0 && prevBot <= p.y) {
-                if (this.px + HITBOX_W - FOOT_OFFSET <= p.x || this.px + FOOT_OFFSET >= p.x + p.w) continue;
+                if (effPx + HITBOX_W - FOOT_OFFSET <= p_x || effPx + FOOT_OFFSET >= p_x + p.w) continue;
+                this.px = this.wrapX(effPx);
                 this.py = p.y - HITBOX_H;
                 if (p.gimmick !== 'ice') this.vx = 0;
                 this.vy = 0;
@@ -393,11 +463,11 @@ export class GameEngine {
             // 머리 박기
             if (this.vy < 0 && prevY >= p.y + p.h) {
                 // 수평 겹침이 코너 마진 이내 → 옆으로 밀어서 코너 통과
-                const hOvlp = Math.min(this.px + HITBOX_W - p.x, p.x + p.w - this.px);
+                const hOvlp = Math.min(effPx + HITBOX_W - p_x, p_x + p.w - effPx);
                 if (hOvlp > 0 && hOvlp <= this.CORNER_M) {
-                    this.px += (this.px + HITBOX_W / 2 < p.x + p.w / 2)
+                    effPx += (effPx + HITBOX_W / 2 < p_x + p.w / 2)
                         ? -(hOvlp + 1) : (hOvlp + 1);
-                    continue;
+                    break;
                 }
                 this.py = p.y + p.h; this.vy = Math.abs(this.vy) * 0.5; continue;
             }
@@ -411,27 +481,29 @@ export class GameEngine {
             const prevWOffset = FOOT_OFFSET * prevRatio;
             
             // 오른쪽 벽
-            if (this.vx > 0 && prevX + HITBOX_W - prevWOffset <= p.x) {
+            if (this.vx > 0 && prevX + HITBOX_W - prevWOffset <= p_x) {
                 // 수직 겹침이 코너 마진 이내 → 위/아래로 밀어서 코너 통과
                 const vOvlp = Math.min(this.py + HITBOX_H - p.y, p.y + p.h - this.py);
                 if (vOvlp > 0 && vOvlp <= this.CORNER_M) {
                     this.py += (this.py + HITBOX_H / 2 < p.y + p.h / 2)
                         ? -(vOvlp + 1) : (vOvlp + 1);
-                    continue;
+                    break;
                 }
-                this.px = p.x - HITBOX_W + wOffset; this.vx = -Math.abs(this.vx) * 0.5; continue;
+                effPx = p_x - HITBOX_W + wOffset; this.vx = -Math.abs(this.vx) * 0.5; continue;
             }
             // 왼쪽 벽
-            if (this.vx < 0 && prevX + prevWOffset >= p.x + p.w) {
+            if (this.vx < 0 && prevX + prevWOffset >= p_x + p.w) {
                 const vOvlp = Math.min(this.py + HITBOX_H - p.y, p.y + p.h - this.py);
                 if (vOvlp > 0 && vOvlp <= this.CORNER_M) {
                     this.py += (this.py + HITBOX_H / 2 < p.y + p.h / 2)
                         ? -(vOvlp + 1) : (vOvlp + 1);
-                    continue;
+                    break;
                 }
-                this.px = p.x + p.w - wOffset; this.vx = Math.abs(this.vx) * 0.5; continue;
+                effPx = p_x + p.w - wOffset; this.vx = Math.abs(this.vx) * 0.5; continue;
             }
         }
+
+        this.px = this.wrapX(effPx);
 
         this._checkTrapCollision();
 
@@ -445,6 +517,7 @@ export class GameEngine {
             if (this.py + HITBOX_H <= t.y || this.py >= t.y + t.h) continue;
             this.vx = t.bounceVX; this.vy = t.bounceVY;
             if (this.state !== 'start') this._changeState('start');
+            this._endPredicted = false;
             return;
         }
     }
@@ -452,6 +525,7 @@ export class GameEngine {
     _applyFanForce() {
         const cx = this.px + this.HITBOX_W / 2;
         const cy = this.py + this.HITBOX_H / 2;
+        let anyFan = false;
         for (const f of this.fans) {
             const fx = f.x + f.w / 2, fy = f.y + f.h / 2;
             const dist = Math.sqrt((cx - fx) ** 2 + (cy - fy) ** 2);
@@ -459,7 +533,13 @@ export class GameEngine {
                 const k = 1 - dist / f.range;
                 this.vx += f.windX * k;
                 this.vy += f.windY * k;
+                anyFan = true;
             }
+        }
+        if (anyFan) {
+            const cap = MAX_VX * 2;
+            if (this.vx > cap) this.vx = cap;
+            else if (this.vx < -cap) this.vx = -cap;
         }
     }
 
@@ -476,8 +556,9 @@ export class GameEngine {
     }
 
     _checkEndTransition() {
-        if (this.state !== 'start' || this.vy < 0) return;
+        if (this.state !== 'start' || this.vy < 0 || this._endPredicted) return;
         if (this._framesUntilLanding(this.px, this.py, this.vx, this.vy, 18) <= 18) {
+            this._endPredicted = true;
             this._changeState('end');
         }
     }
@@ -508,16 +589,42 @@ export class GameEngine {
             }
 
             if (p.gimmick === 'moving') {
-                const axis = p.moveAxis;
-                const prev = p[axis];
-                p[axis] += p.moveSpeed * p.moveDir;
-                if (p[axis] >= p.moveMax || p[axis] <= p.moveMin) {
-                    p.moveDir *= -1;
-                    p[axis] = Math.max(p.moveMin, Math.min(p.moveMax, p[axis]));
-                }
-                if (this.standingOn === p) {
-                    if (axis === 'x') this.onMovingDelta.x = p[axis] - prev;
-                    else              this.onMovingDelta.y = p[axis] - prev;
+                if (p.startX !== undefined && p.endX !== undefined) {
+                    const dist = Math.hypot(p.endX - p.startX, p.endY - p.startY);
+                    if (dist > 0) {
+                        if (p.moveProgress === undefined) p.moveProgress = 0;
+                        const progressSpeed = p.moveSpeed / dist;
+                        p.moveProgress += progressSpeed * p.moveDir;
+                        if (p.moveProgress >= 1) {
+                            p.moveProgress = 1;
+                            p.moveDir = -1;
+                        } else if (p.moveProgress <= 0) {
+                            p.moveProgress = 0;
+                            p.moveDir = 1;
+                        }
+                        const prevX = p.x;
+                        const prevY = p.y;
+                        p.x = p.startX + (p.endX - p.startX) * p.moveProgress;
+                        p.y = p.startY + (p.endY - p.startY) * p.moveProgress;
+
+                        if (this.standingOn === p) {
+                            this.onMovingDelta.x = p.x - prevX;
+                            this.onMovingDelta.y = p.y - prevY;
+                        }
+                    }
+                } else if (p.moveAxis) {
+                    // Fallback for old map format
+                    const axis = p.moveAxis;
+                    const prev = p[axis];
+                    p[axis] += p.moveSpeed * p.moveDir;
+                    if (p[axis] >= p.moveMax || p[axis] <= p.moveMin) {
+                        p.moveDir *= -1;
+                        p[axis] = Math.max(p.moveMin, Math.min(p.moveMax, p[axis]));
+                    }
+                    if (this.standingOn === p) {
+                        if (axis === 'x') this.onMovingDelta.x = p[axis] - prev;
+                        else              this.onMovingDelta.y = p[axis] - prev;
+                    }
                 }
             }
         }
@@ -539,7 +646,12 @@ export class GameEngine {
                 if (this.animFrame < last) this.animFrame++; break;
             case 'end':
                 if (this.animFrame < last) this.animFrame++;
-                else this._changeState('stand');
+                else if (this.standingOn) this._changeState('stand');
+                else {
+                    // 예측이 빗나가 공중에서 end가 끝남 → start 마지막 프레임으로 복귀
+                    this.state = 'start';
+                    this.animFrame = SPRITE_INFO.start.frames - 1;
+                }
                 break;
         }
     }

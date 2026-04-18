@@ -1,7 +1,7 @@
 import { CELL }                                    from './constants.js';
 import { GameEngine }                               from './engine.js';
 import { Renderer }                                 from './renderer.js';
-import { PLATFORMS_DEF, FANS_DEF, TRAPS_DEF,
+import { PLATFORMS_DEF, FANS_DEF, TRAPS_DEF, STAGES_DEF,
          scalePlatforms, scaleFans, scaleTraps }    from './map_data.js';
 
 // ── Canvas ───────────────────────────────────────────────────────────────────
@@ -29,6 +29,7 @@ const engine = new GameEngine({
     platforms, fans, traps,
     mapH: MAP_H,
     savePlatformY: SAVE_PLATFORM_Y,
+    stages: STAGES_DEF,
 });
 
 const renderer = new Renderer({

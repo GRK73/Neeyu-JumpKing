@@ -1,4 +1,4 @@
-import { CELL }                     from './constants.js';
+import { CELL, CHAR_SCALE, SPRITE_INFO } from './constants.js';
 import { GameEngine }                from './engine.js';
 import { Renderer }                  from './renderer.js';
 import { THEME_ORDER }               from './stage_themes.js';
@@ -103,6 +103,7 @@ function showPlayMsg(txt, ms = 0) {
 
 // ── 게임 시작 (맵 데이터 주입) ───────────────────────────────────────────────
 async function startGame(mapJson, opts = {}) {
+    stopMenuScene();
     currentMapKey = opts.mapKey ?? null;
     currentMapName = opts.mapName ?? '';
     const cellsArr = Array.isArray(mapJson.cells) ? mapJson.cells : [];
@@ -150,7 +151,7 @@ async function startGame(mapJson, opts = {}) {
     ending = null;
     keys = {};
 
-    runStartTs = performance.now();
+    runStartTs = 0;
     pausedAccumMs = 0;
     pauseStartTs = 0;
     finalTimeMs = 0;
@@ -176,6 +177,8 @@ async function startGame(mapJson, opts = {}) {
     await renderer.loadSprites();
     await renderer.preWarm();
     loading.classList.add('hidden');
+
+    runStartTs = performance.now();
 
     if (rafId) cancelAnimationFrame(rafId);
     rafId = requestAnimationFrame(ts => { lastTime = ts; loop(ts); });
@@ -236,6 +239,7 @@ function quitToMenu() {
     currentMapKey = null;
     currentMapName = '';
     bgmEl.pause();
+    startMenuScene();
 }
 
 document.getElementById('songPrev').addEventListener('click', () => cycleSong(-1));
@@ -245,16 +249,12 @@ document.getElementById('songNext').addEventListener('click', () => cycleSong(1)
 function beginEnding() {
     finalTimeMs = currentElapsedMs();
     timerEl.classList.add('hidden');
-    // 배경을 Stage 8 (space) 테마로 고정
-    engine.stages = [{ name: 'Stage 8', topRow: 0, theme: 'space' }];
-    renderer._sortedStages = null;
-    renderer._sortedStagesSrc = null;
-    ending = { t0: performance.now(), phase: 1, startCamY: engine.cameraY };
-    // 입력 무시 + 상태 고정
+    ending = { phase: 3 };
     keys = {};
     engine.vx = 0; engine.vy = 0;
     engine.state = 'stand';
     showPlayMsg('');
+    showResult();
 }
 
 function showResult() {
@@ -274,11 +274,12 @@ function tickEnding() {
     const riseSpeed = 3.5; // px per frame
 
     if (ending.phase === 1) {
+        // 3초간 카메라와 캐릭터가 함께 상승
         engine.py -= riseSpeed;
-        engine.cameraY = Math.max(0, engine.cameraY - riseSpeed);
+        engine.cameraY -= riseSpeed;
         if (t >= 3000) ending.phase = 2;
     } else {
-        // 카메라 고정, 캐릭터만 상승
+        // 카메라 고정, 캐릭터만 상승 → 화면 위로 빠져나가면 결과창
         engine.py -= riseSpeed;
         if (engine.py + engine.HITBOX_H < engine.cameraY - 20 && ending.phase === 2) {
             ending.phase = 3;
@@ -299,7 +300,7 @@ function loop(ts) {
     }
 
     if (ending) {
-        tickEnding();
+        // 애니메이션 없음 — 결과창이 떠 있는 동안 씬 정지
     } else {
         engine.tick(dt, keys);
 
@@ -600,3 +601,149 @@ document.getElementById('btnEndMenu').addEventListener('click', () => {
 endNicknameEl.addEventListener('keydown', e => {
     if (e.code === 'Enter') { e.preventDefault(); submitRanking(); }
 });
+
+// ── 메인 메뉴 배경 씬 ────────────────────────────────────────────────────────
+const menuSprites = {};
+let menuRafId = null;
+let menuState = null;
+
+function loadMenuAssets() {
+    const load = (src) => new Promise(resolve => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(null);
+        img.src = src;
+    });
+    return Promise.all([
+        load('assets/bg/bg_stage_2.png'),
+        load('assets/sprites/ready.png'),
+        load('assets/sprites/start.png'),
+        load('assets/sprites/end.png'),
+    ]).then(([bg, ready, start, end]) => {
+        menuSprites.bg = bg;
+        menuSprites.ready = ready;
+        menuSprites.start = start;
+        menuSprites.end = end;
+    });
+}
+
+function startMenuScene() {
+    if (menuRafId) return;
+    const charW = Math.round(canvas.width * CHAR_SCALE);
+    menuState = {
+        x: -charW,
+        phase: 'ready',
+        phaseStart: performance.now(),
+        jumpStartX: 0,
+    };
+    const loop = (ts) => {
+        drawMenuFrame(ts);
+        menuRafId = requestAnimationFrame(loop);
+    };
+    menuRafId = requestAnimationFrame(loop);
+}
+
+function stopMenuScene() {
+    if (menuRafId) { cancelAnimationFrame(menuRafId); menuRafId = null; }
+}
+
+function drawMenuFrame(ts) {
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+
+    // 배경
+    const bg = menuSprites.bg;
+    if (bg && bg.complete && bg.naturalWidth > 0) {
+        const scale = Math.max(W / bg.naturalWidth, H / bg.naturalHeight);
+        const dw = bg.naturalWidth * scale;
+        const dh = bg.naturalHeight * scale;
+        ctx.drawImage(bg, (W - dw) / 2, (H - dh) / 2, dw, dh);
+    } else {
+        ctx.fillStyle = '#1a1a2e';
+        ctx.fillRect(0, 0, W, H);
+    }
+
+    // 바닥 (curtain 테마 색상 = bg_stage_2)
+    const FLOOR_ROWS = 2;
+    const floorH = CELL * FLOOR_ROWS;
+    const floorTopY = H - floorH;
+    ctx.fillStyle = '#770011';
+    ctx.fillRect(0, floorTopY, W, floorH);
+    ctx.fillStyle = '#aa0022';
+    ctx.fillRect(0, floorTopY, W, 6);
+    ctx.strokeStyle = 'rgba(221, 68, 85, 0.4)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= W; x += CELL) {
+        ctx.beginPath();
+        ctx.moveTo(x + 0.5, floorTopY);
+        ctx.lineTo(x + 0.5, H);
+        ctx.stroke();
+    }
+
+    // 캐릭터 상태 기계
+    const t = ts - menuState.phaseStart;
+    const readyDur = 16 * 70;
+    const startFrameMs = 55;
+    const endFrameMs   = 40;
+    const startDur = 23 * startFrameMs;                  // start 애니 전체 재생
+    const endLeadFrames = 6;                             // 착지 시 end 7번째 프레임이 뜨도록
+    const endLeadMs = endLeadFrames * endFrameMs;
+    const airborneDur = startDur + endLeadMs;            // 공중 체공 총 시간
+    const charW = Math.round(W * CHAR_SCALE);
+    const charH = charW;
+
+    let drawState = 'ready';
+    let frame = 0;
+    let yOffset = 0;
+
+    if (menuState.phase === 'ready') {
+        drawState = 'ready';
+        frame = Math.min(15, Math.floor(t / 70));
+        if (t >= readyDur) {
+            menuState.phase = 'start';
+            menuState.phaseStart = ts;
+            menuState.jumpStartX = menuState.x;
+        }
+    } else if (menuState.phase === 'start') {
+        const prog = Math.min(1, t / airborneDur);
+        yOffset = -4 * prog * (1 - prog) * 140;
+        menuState.x = menuState.jumpStartX + prog * 220;
+
+        if (t < startDur) {
+            drawState = 'start';
+            frame = Math.min(22, Math.floor(t / startFrameMs));
+        } else {
+            drawState = 'end';
+            frame = Math.min(endLeadFrames - 1, Math.floor((t - startDur) / endFrameMs));
+        }
+
+        if (t >= airborneDur) {
+            menuState.x = menuState.jumpStartX + 220;
+            menuState.phase = 'end';
+            menuState.phaseStart = ts;
+        }
+    } else {
+        // 착지 후 end 애니 나머지 (frame 6 ~ 19)
+        const tailStartFrame = 6;
+        const tailFrames = 20 - tailStartFrame;
+        drawState = 'end';
+        frame = Math.min(19, tailStartFrame + Math.floor(t / endFrameMs));
+        const tailDur = tailFrames * endFrameMs;
+        if (t >= tailDur) {
+            if (menuState.x > W + charW) menuState.x = -charW;
+            menuState.phase = 'ready';
+            menuState.phaseStart = ts;
+        }
+    }
+
+    const img = menuSprites[drawState];
+    if (img && img.complete && img.naturalWidth > 0) {
+        const { fw, fh } = SPRITE_INFO[drawState];
+        const drawX = menuState.x;
+        const drawY = floorTopY - charH + yOffset;
+        ctx.drawImage(img, frame * fw, 0, fw, fh, drawX, drawY, charW, charH);
+    }
+}
+
+loadMenuAssets().then(() => startMenuScene());
+

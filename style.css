@@ -61,7 +61,7 @@ body {
 #mainMenu {
     position: absolute;
     inset: 0;
-    background: #0d0d1a;
+    background: transparent;
     display: flex;
     flex-direction: column;
     align-items: center;

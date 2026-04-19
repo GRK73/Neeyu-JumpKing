@@ -1,3 +1,10 @@
+@font-face {
+    font-family: 'KerisKedu';
+    src: url('assets/KERISKEDU_B.otf') format('opentype');
+    font-weight: bold;
+    font-style: normal;
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -30,10 +37,209 @@ body {
     align-items: center;
     background: #0d0d1a;
     color: #fff;
-    font: 20px monospace;
+    font: 20px 'KerisKedu', monospace;
     letter-spacing: 2px;
 }
 
 #loading.hidden {
     display: none;
+}
+
+#playMsg {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.7);
+    padding: 4px 12px;
+    border-radius: 4px;
+    color: #ffdd44;
+    font: 12px monospace;
+    pointer-events: none;
+}
+
+#mainMenu {
+    position: absolute;
+    inset: 0;
+    background: #0d0d1a;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    z-index: 100;
+}
+#mainMenu.hidden { display: none; }
+
+#menuTitle {
+    margin-top: 18vh;
+    color: #ffd84a;
+    font: bold 54px 'KerisKedu', monospace;
+    letter-spacing: 4px;
+    text-shadow: 0 0 20px rgba(255, 216, 74, 0.5);
+}
+
+#menuButtons {
+    margin-top: 10vh;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.menuBtn {
+    min-width: 260px;
+    padding: 14px 28px;
+    background: #1a1a2e;
+    color: #ffd84a;
+    border: 2px solid #554;
+    border-radius: 6px;
+    font: bold 20px 'KerisKedu', monospace;
+    letter-spacing: 2px;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.menuBtn:hover {
+    background: #2a2a44;
+    border-color: #ffd84a;
+    color: #fff6b3;
+}
+
+#endText {
+    position: absolute;
+    inset: 0;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    color: #fff;
+    font: bold 72px monospace;
+    letter-spacing: 6px;
+    text-shadow: 0 0 24px rgba(255, 255, 255, 0.4);
+    pointer-events: none;
+    background: transparent;
+}
+#endText.show { display: flex; }
+
+#songPicker {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: rgba(26, 26, 46, 0.7);
+    border: 1px solid #554;
+    border-radius: 6px;
+    color: #ffd84a;
+    font: bold 13px monospace;
+    letter-spacing: 1px;
+    z-index: 80;
+    user-select: none;
+}
+#songPicker.hidden { display: none; }
+#songTitle {
+    min-width: 180px;
+    text-align: center;
+}
+.songArrow {
+    background: none;
+    border: none;
+    color: #ffd84a;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 2px 6px;
+}
+.songArrow:hover { color: #fff6b3; }
+
+#pauseMenu, #customMapListOverlay, #uploadMapOverlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: rgba(13, 13, 26, 0.85);
+    z-index: 150;
+}
+#pauseMenu.hidden, #customMapListOverlay.hidden, #uploadMapOverlay.hidden { display: none; }
+
+.list-container {
+    display: flex;
+    flex-direction: column;
+    width: 600px;
+    height: 80%;
+    background: #1a1a2e;
+    border: 2px solid #554;
+    border-radius: 10px;
+    padding: 20px;
+}
+.list-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid #554;
+    padding-bottom: 10px;
+    margin-bottom: 10px;
+}
+.list-header h2 { margin: 0; color: #fff; }
+#customMapList {
+    flex: 1;
+    overflow-y: auto;
+    margin-bottom: 15px;
+}
+.list-footer {
+    display: flex;
+    justify-content: center;
+}
+.small-btn {
+    min-width: auto;
+    padding: 8px 16px;
+    font-size: 16px;
+}
+.input-field {
+    width: 100%;
+    padding: 10px;
+    background: #0d0d1a;
+    border: 1px solid #554;
+    color: #fff;
+    font-family: monospace;
+    font-size: 16px;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    box-sizing: border-box;
+}
+
+.map-item {
+    padding: 10px;
+    border-bottom: 1px solid #554;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.map-item:hover {
+    background: #2a2a4e;
+}
+.map-item-title {
+    font-size: 16px;
+    color: #ffd84a;
+    font-weight: bold;
+}
+.map-item-info {
+    font-size: 12px;
+    color: #ccc;
+    margin-top: 4px;
+}
+
+.pauseBox {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 32px 44px;
+    background: #1a1a2e;
+    border: 2px solid #554;
+    border-radius: 10px;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
+}
+.pauseBox h2 {
+    color: #ffd84a;
+    font: bold 32px monospace;
+    letter-spacing: 4px;
+    margin-bottom: 4px;
 }

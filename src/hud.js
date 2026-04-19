@@ -1,12 +1,9 @@
 import { MAX_CHARGE } from './constants.js';
 
-// ── 절대 좌표계 HUD (진행바·상태·차지 게이지) ────────────────────────────
+// ── 절대 좌표계 HUD (진행바·차지 게이지) ────────────────────────────────
 export function drawHUD(renderer) {
-    const { ctx, canvas, engine, mode } = renderer;
-    const {
-        px, py, cameraY, state, chargeStart, savepointUnlocked,
-        MAP_H, HITBOX_W, SPRITE_OY,
-    } = engine;
+    const { ctx, canvas, engine } = renderer;
+    const { px, py, cameraY, state, chargeStart, MAP_H, HITBOX_W, SPRITE_OY } = engine;
 
     // 우측 진행도 바
     const prog = 1 - (py / MAP_H);
@@ -15,17 +12,6 @@ export function drawHUD(renderer) {
     ctx.fillStyle = '#ffdd44';
     const bh = (canvas.height - 16) * prog;
     ctx.fillRect(canvas.width - 16, canvas.height - 8 - bh, 8, bh);
-
-    if (mode === 'game') {
-        if (savepointUnlocked) {
-            ctx.fillStyle = '#00ff88';
-            ctx.font = 'bold 12px monospace';
-            ctx.fillText('SAVE', canvas.width - 52, 20);
-        }
-        ctx.fillStyle = 'rgba(255,255,255,0.4)';
-        ctx.font = '11px monospace';
-        ctx.fillText(`state:${state}  y:${Math.round(py)}  save:${savepointUnlocked}`, 8, 15);
-    }
 
     // 차지 바 (캐릭터 머리 위)
     if (state === 'ready') {

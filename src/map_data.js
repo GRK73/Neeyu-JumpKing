@@ -1,5 +1,9 @@
 // ── 맵 데이터 (원본 960px 기준 좌표) ─────────────────────────────────────────
 
+// 맵 기준 해상도 및 규격
+export const MAP_BASE_WIDTH    = 960;  // 좌표계 기준 폭 (실제 캔버스 폭에 맞춰 스케일)
+export const MAP_HEIGHT_SCREENS = 13;  // 세로 = 캔버스 높이 × 이 값
+
 export const PLATFORMS_DEF = [
     { x: 0, y: 6940, w: 960, h: 60, type: 'wall' }
 ];
@@ -78,7 +82,9 @@ export function scaleFans(defs, scale) {
         ...f,
         x:     Math.round(f.x     * scale),
         w:     Math.round(f.w     * scale),
-        range: Math.round(f.range * scale),
+        range: f.range != null ? Math.round(f.range * scale) : undefined,
+        zoneX: f.zoneX != null ? Math.round(f.zoneX * scale) : undefined,
+        zoneW: f.zoneW != null ? Math.round(f.zoneW * scale) : undefined,
     }));
 }
 

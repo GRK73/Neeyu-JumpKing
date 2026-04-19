@@ -1,6 +1,9 @@
 import { CELL } from './constants.js';
 import { getStageBg } from './stage_themes.js';
 
+// 경계 중심 ±FADE_PX 구간에서 인접 스테이지 bg와 크로스페이드
+const FADE_PX = 120;
+
 // ── 하늘·테마 그라데이션 배경 ────────────────────────────────────────────
 // stages는 고정 배열이므로 정렬 결과를 렌더러 인스턴스에 캐시하여 매 프레임 재정렬/재할당 회피
 function getSortedStages(renderer) {
@@ -24,32 +27,40 @@ export function drawBackground(renderer) {
     const numStages = sorted.length;
 
     let baseIdx = 0;
-    let frac = 0;
     if (numStages > 1) {
         for (let i = 0; i < numStages; i++) {
             if (midWorld >= sorted[i].topRow * CELL) { baseIdx = i; break; }
         }
-        const prevIdx = Math.max(0, baseIdx - 1);
+    }
+
+    // 가장 가까운 경계와의 거리로 인접 스테이지를 보간
+    // 경계에서 alpha=0.5 (50/50), ±FADE_PX 지점에서 alpha=0
+    let blendIdx = -1;
+    let alpha = 0;
+    if (numStages > 1) {
+        // 아래 경계: sorted[baseIdx-1]와 접함 (Y가 더 큰 쪽)
         if (baseIdx > 0) {
-            const curTop = sorted[baseIdx].topRow * CELL;
-            const prevTop = sorted[prevIdx].topRow * CELL;
-            const stageH = prevTop - curTop;
-            if (stageH > 0) {
-                frac = (midWorld - curTop) / stageH;
-                frac = Math.max(0, Math.min(1, frac));
+            const boundaryY = sorted[baseIdx - 1].topRow * CELL;
+            const d = boundaryY - midWorld; // 현재 스테이지 안에 있으면 d >= 0
+            if (d >= 0 && d < FADE_PX) {
+                alpha = 0.5 * (1 - d / FADE_PX);
+                blendIdx = baseIdx - 1;
+            }
+        }
+        // 위 경계: sorted[baseIdx+1]와 접함 (Y가 더 작은 쪽)
+        if (baseIdx < numStages - 1) {
+            const boundaryY = sorted[baseIdx].topRow * CELL;
+            const d = midWorld - boundaryY; // 현재 스테이지 안에 있으면 d >= 0
+            if (d >= 0 && d < FADE_PX) {
+                const a = 0.5 * (1 - d / FADE_PX);
+                if (a > alpha) { alpha = a; blendIdx = baseIdx + 1; }
             }
         }
     }
 
-    let alpha = 0;
-    if (frac > 0.35 && frac < 0.65) {
-        alpha = (frac - 0.35) / 0.3;
-    } else if (frac >= 0.65) {
-        alpha = 1.0;
-    }
-
     const drawBgLayer = (stageIdx, layerAlpha) => {
-        const bgImg = renderer.bgImages && renderer.bgImages[stageIdx];
+        const stage = sorted[stageIdx];
+        const bgImg = renderer.bgImages && stage && renderer.bgImages[stage.theme];
         if (bgImg && bgImg.complete && bgImg.naturalWidth > 0) {
             const scale = Math.max(W / bgImg.naturalWidth, H / bgImg.naturalHeight) * 1.05;
             const drawW = bgImg.naturalWidth * scale;
@@ -86,8 +97,8 @@ export function drawBackground(renderer) {
     ctx.fillRect(0, 0, W, H);
 
     drawBgLayer(baseIdx, 1.0);
-    if (alpha > 0 && baseIdx > 0) {
-        drawBgLayer(baseIdx - 1, alpha);
+    if (alpha > 0 && blendIdx >= 0) {
+        drawBgLayer(blendIdx, alpha);
     }
 
     ctx.fillStyle = 'rgba(0, 5, 20, 0.4)';

@@ -9,7 +9,61 @@
 <body>
     <div id="wrapper">
         <canvas id="gameCanvas"></canvas>
-        <div id="loading">Loading...</div>
+        <div id="loading" class="hidden">Loading...</div>
+        <div id="playMsg"></div>
+
+        <div id="songPicker" class="hidden">
+            <button id="songPrev" class="songArrow">&#9664;</button>
+            <span id="songTitle">No Song</span>
+            <button id="songNext" class="songArrow">&#9654;</button>
+        </div>
+        <audio id="bgm" loop></audio>
+
+        <div id="mainMenu">
+            <h1 id="menuTitle">Neeyu Jump King</h1>
+            <div id="menuButtons">
+                <button class="menuBtn" data-action="main">Main Map</button>
+                <button class="menuBtn" data-action="custom">Custom Map</button>
+                <button class="menuBtn" data-action="editor">Editor</button>
+            </div>
+            <input type="file" id="localMapInput" accept="application/json" style="display:none;">
+        </div>
+
+        <div id="customMapListOverlay" class="hidden">
+            <div class="list-container">
+                <div class="list-header">
+                    <h2>Custom Maps</h2>
+                    <button class="menuBtn small-btn" id="btnOpenUpload">Upload Map</button>
+                </div>
+                <div id="customMapList">Loading...</div>
+                <div class="list-footer">
+                    <button class="menuBtn" id="btnCloseCustomMaps">Close</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="uploadMapOverlay" class="hidden">
+            <div class="pauseBox" style="width:350px;">
+                <h2>Upload Map</h2>
+                <input type="text" id="uploadMapTitle" placeholder="맵 제목 (Map Title)" class="input-field">
+                <input type="text" id="uploadMapCreator" placeholder="제작자명 (Creator)" class="input-field">
+                <button class="menuBtn small-btn" id="btnSelectFile">Select Map File (.json)</button>
+                <span id="selectedFileName" style="color:#ccc; font-size:12px; margin-top:-10px;">파일이 선택되지 않았습니다</span>
+                <input type="file" id="uploadMapFile" accept=".json" style="display:none;">
+                <button class="menuBtn" id="btnSubmitUpload" style="margin-top:10px; color:#88ff88;">Upload</button>
+                <button class="menuBtn" id="btnCancelUpload" style="margin-top:10px; color:#ff6666;">Cancel</button>
+            </div>
+        </div>
+
+        <div id="endText">The End.</div>
+
+        <div id="pauseMenu" class="hidden">
+            <div class="pauseBox">
+                <h2>Paused</h2>
+                <button class="menuBtn" data-paction="resume">Resume</button>
+                <button class="menuBtn" data-paction="quit">Quit</button>
+            </div>
+        </div>
     </div>
     <script type="module" src="src/main.js"></script>
 </body>

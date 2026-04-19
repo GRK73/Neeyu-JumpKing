@@ -1,13 +1,13 @@
-import { SPRITE_INFO } from './constants.js';
-import { themeAt } from './stage_themes.js';
+import { SPRITE_INFO, BREAKABLE_LIFETIME } from './constants.js';
+import { themeAt, THEME_ORDER } from './stage_themes.js';
 import { initTextures } from './texture_builder.js';
 import { drawBackground } from './background.js';
 import { drawHUD } from './hud.js';
 
 // 플랫폼 렌더링 분기 판정용 상수 (매 프레임 재할당 방지)
 const STRAIGHT_TEX = new Set(['wood', 'cloth', 'metal']);
-const SKIP_BORDER_TEX = new Set(['goal', 'save', 'ice', 'breakable']);
-const SKIP_BORDER_TYPE = new Set(['goal', 'save']);
+const SKIP_BORDER_TEX = new Set(['goal', 'ice']);
+const SKIP_BORDER_TYPE = new Set(['goal']);
 
 // ── 렌더러 ────────────────────────────────────────────────────────────────────
 export class Renderer {
@@ -58,17 +58,18 @@ export class Renderer {
             if (imgs[i]) this.bitmaps[name] = await createImageBitmap(imgs[i]);
         }));
 
-        this.bgImages = [];
-        const bgPromises = [];
-        for (let i = 1; i <= 8; i++) {
-            bgPromises.push(new Promise(resolve => {
-                const img = new Image();
-                img.onload = () => resolve(img);
-                img.onerror = () => resolve(null);
-                img.src = `assets/bg/bg_stage_${i}.png`;
-            }));
+        // 배경 이미지는 테마명으로 매핑 (bg_stage_1 = 바닥 테마, bg_stage_8 = 하늘 테마)
+        this.bgImages = {};
+        const themesBottomUp = [...THEME_ORDER].reverse(); // [stage, curtain, office, circus, forest, canopy, sky, space]
+        const bgResults = await Promise.all(themesBottomUp.map((theme, i) => new Promise(resolve => {
+            const img = new Image();
+            img.onload  = () => resolve({ theme, img });
+            img.onerror = () => resolve({ theme, img: null });
+            img.src = `assets/bg/bg_stage_${i + 1}.png`;
+        })));
+        for (const { theme, img } of bgResults) {
+            if (img) this.bgImages[theme] = img;
         }
-        this.bgImages = await Promise.all(bgPromises);
     }
 
     // ── GPU 워밍 ──────────────────────────────────────────────────────────────
@@ -85,6 +86,20 @@ export class Renderer {
         ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
 
+    _updateBgSnapshot() {
+        const W = this.canvas.width, H = this.canvas.height;
+        if (!this._bgCanvas || this._bgCanvas.width !== W || this._bgCanvas.height !== H) {
+            this._bgCanvas = document.createElement('canvas');
+            this._bgCanvas.width = W;
+            this._bgCanvas.height = H;
+            this._bgCtx = this._bgCanvas.getContext('2d');
+        }
+        this._bgCtx.clearRect(0, 0, W, H);
+        const savedCtx = this.ctx;
+        this.ctx = this._bgCtx;
+        try { drawBackground(this); } finally { this.ctx = savedCtx; }
+    }
+
     // ── 전체 렌더 ─────────────────────────────────────────────────────────────
     render() {
         if (!this._texturesReady) {
@@ -96,30 +111,22 @@ export class Renderer {
                 this._texturesReady = true;
             }
         }
-        drawBackground(this);
+        this._updateBgSnapshot();
+        this.ctx.drawImage(this._bgCanvas, 0, 0);
         this._drawPlatforms();
         this._drawFans();
         this._drawTraps();
+        this._drawSigns();
         this._drawCharacter();
         drawHUD(this);
     }
 
     _getStageTex(worldY) {
-        const { stages } = this.engine;
-        if (stages && stages.length > 0) return themeAt(worldY, stages).tex;
-        if (worldY > 5900) return 'wood';
-        if (worldY > 5100) return 'cloth';
-        if (worldY > 4300) return 'metal';
-        if (worldY > 3500) return 'circus';
-        if (worldY > 2700) return 'dirt';
-        if (worldY > 1900) return 'branch';
-        if (worldY > 1100) return 'cloud';
-        return 'meteor';
+        return themeAt(worldY, this.engine.stages).tex;
     }
 
     _getPlatTexKey(p) {
         if (p.gimmick === 'ice')       return 'ice';
-        if (p.gimmick === 'breakable') return 'breakable';
         return this._getStageTex(p.y);
     }
 
@@ -128,28 +135,13 @@ export class Renderer {
         const { engine } = this;
         if (p.type === 'floor') return { base: '#663300', top: '#885522', edge: '#cc9944' };
         if (p.type === 'goal')  return { base: '#ccaa00', top: '#ffdd44', edge: '#ffffff' };
-        if (p.type === 'save')  return {
-            base: engine.savepointUnlocked ? '#006633' : '#004422',
-            top:  engine.savepointUnlocked ? '#00cc66' : '#007744',
-            edge: '#aaffcc',
-        };
         if (p.gimmick === 'breakable') {
-            const r = Math.min(p.standTimer / 5000, 1);
+            const r = Math.min(p.standTimer / BREAKABLE_LIFETIME, 1);
             if (r < 0.33) return { base: '#556677', top: '#7799aa', edge: '#aabbcc' };
             if (r < 0.66) return { base: '#886600', top: '#ccaa00', edge: '#ffdd66' };
             return               { base: '#882200', top: '#cc4400', edge: '#ff8844' };
         }
-        const { stages } = engine;
-        if (stages && stages.length > 0) return themeAt(p.y, stages).plat;
-        const y = p.y;
-        if (y > 5900) return { base: '#554433', top: '#776655', edge: '#998877' };
-        if (y > 5100) return { base: '#770011', top: '#aa0022', edge: '#dd4455' };
-        if (y > 4300) return { base: '#334455', top: '#556677', edge: '#99aabb' };
-        if (y > 3500) return { base: '#881100', top: '#cc2200', edge: '#ffcc44' };
-        if (y > 2700) return { base: '#225511', top: '#337722', edge: '#77cc55' };
-        if (y > 1900) return { base: '#1a4410', top: '#2a6618', edge: '#66aa44' };
-        if (y > 1100) return { base: '#99bbcc', top: '#bbddee', edge: '#eef6ff' };
-        return               { base: '#112233', top: '#223355', edge: '#6688bb' };
+        return themeAt(p.y, engine.stages).plat;
     }
 
     _getAdjacency(p) {
@@ -176,33 +168,32 @@ export class Renderer {
             visiblePlats.push(p);
         }
 
-        // ── 이동 발판 경로 ──
+        // ── 이동 발판 경로 ── (발판 본체가 화면 밖이어도 경로가 걸치면 그린다)
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
         ctx.lineWidth = 2;
         ctx.lineCap = 'round';
         ctx.setLineDash([6, 6]);
-        for (const p of visiblePlats) {
-            if (p.gimmick === 'moving') {
-                ctx.beginPath();
-                if (p.startX !== undefined && p.endX !== undefined) {
-                    ctx.moveTo(p.startX + p.w / 2, p.startY - cameraY + p.h / 2);
-                    ctx.lineTo(p.endX + p.w / 2, p.endY - cameraY + p.h / 2);
-                } else if (p.moveAxis === 'x') {
-                    const sy = p.y - cameraY;
-                    const pathY = sy + p.h / 2;
-                    const startX = p.moveMin + p.w / 2;
-                    const endX = p.moveMax + p.w / 2;
-                    ctx.moveTo(startX, pathY);
-                    ctx.lineTo(endX, pathY);
-                } else if (p.moveAxis === 'y') {
-                    const pathX = p.x + p.w / 2;
-                    const startY = p.moveMin - cameraY + p.h / 2;
-                    const endY = p.moveMax - cameraY + p.h / 2;
-                    ctx.moveTo(pathX, startY);
-                    ctx.lineTo(pathX, endY);
-                }
-                ctx.stroke();
-            }
+        for (const p of platforms) {
+            if (p.broken || p.gimmick !== 'moving') continue;
+            let x1, y1, x2, y2;
+            if (p.startX !== undefined && p.endX !== undefined) {
+                x1 = p.startX + p.w / 2; y1 = p.startY + p.h / 2;
+                x2 = p.endX   + p.w / 2; y2 = p.endY   + p.h / 2;
+            } else if (p.moveAxis === 'x') {
+                x1 = p.moveMin + p.w / 2; x2 = p.moveMax + p.w / 2;
+                y1 = y2 = p.y + p.h / 2;
+            } else if (p.moveAxis === 'y') {
+                x1 = x2 = p.x + p.w / 2;
+                y1 = p.moveMin + p.h / 2; y2 = p.moveMax + p.h / 2;
+            } else continue;
+
+            const minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
+            if (maxY - cameraY < 0 || minY - cameraY > CANVAS_H) continue;
+
+            ctx.beginPath();
+            ctx.moveTo(x1, y1 - cameraY);
+            ctx.lineTo(x2, y2 - cameraY);
+            ctx.stroke();
         }
         ctx.setLineDash([]);
         ctx.lineCap = 'butt';
@@ -276,7 +267,7 @@ export class Renderer {
             ctx.save();
             if (isMoving) ctx.translate(p.x - p.startX, p.y - p.startY);
 
-            if (p.type === 'goal' || p.type === 'save') {
+            if (p.type === 'goal') {
                 this._drawSpecialPlatform(p, sx, sy, p._adj, fillSx, fillSy, fillW, fillH);
                 ctx.restore();
                 continue;
@@ -286,12 +277,16 @@ export class Renderer {
             const c = this._getPlatColors(p);
 
             if (p.type === 'wall' || p.type === 'floor' || p.type === 'normal' || p.type === 'diag_r' || p.type === 'diag_l') {
-                if (['ice', 'breakable'].includes(texKey)) {
-                   this._drawSpecialType(ctx, p, sx, sy, fillSx, fillSy, fillW, fillH, texKey, p._adj, c);
+                if (texKey === 'ice') {
+                   this._drawSpecialType(ctx, p, sx, sy, fillSx, fillSy, fillW, fillH, texKey, p._adj);
                 } else {
                    tracePath(p, px, py, sx, sy, p._adj, texKey);
                    ctx.clip();
                    this._drawThemedWall(ctx, fillSx - 20, fillSy - 20, fillW + 40, fillH + 40, cameraY, texKey, c.base);
+                   if (p.gimmick === 'breakable') {
+                       ctx.fillStyle = 'rgba(90, 20, 15, 0.35)';
+                       ctx.fillRect(fillSx, fillSy, fillW, fillH);
+                   }
                 }
             }
             ctx.restore();
@@ -436,9 +431,26 @@ export class Renderer {
                 }
             }
         }
+
+        // ── Break 그룹 균열 오버레이 ──
+        const processed = new Set();
+        for (const p of platforms) {
+            if (p.gimmick !== 'breakable' || !p.breakGroup) continue;
+            if (processed.has(p.breakGroup)) continue;
+            processed.add(p.breakGroup);
+
+            let onScreen = false;
+            for (const b of p.breakGroup) {
+                if (b.broken) continue;
+                const sy = b.y - cameraY;
+                if (sy + b.h >= 0 && sy <= CANVAS_H) { onScreen = true; break; }
+            }
+            if (!onScreen) continue;
+            this._drawBreakOverlay(p.breakGroup, cameraY);
+        }
     }
 
-    _drawSpecialType(ctx, p, sx, sy, fillSx, fillSy, fillW, fillH, texKey, adj, c) {
+    _drawSpecialType(ctx, p, sx, sy, fillSx, fillSy, fillW, fillH, texKey, adj) {
         if (texKey === 'ice') {
             ctx.fillStyle = '#4499cc'; ctx.fillRect(fillSx, fillSy, fillW, fillH);
             ctx.fillStyle = '#88ccee';
@@ -447,43 +459,32 @@ export class Renderer {
             if (!adj.hasLeft)  ctx.fillRect(sx, sy, 3, p.h);
             if (!adj.hasRight) ctx.fillRect(sx + p.w - 3, sy, 3, p.h);
             this._drawIceCrystals(sx, sy, p.w, p.h);
-        } else if (texKey === 'breakable') {
-            ctx.fillStyle = c.base; ctx.fillRect(fillSx, fillSy, fillW, fillH);
-            ctx.fillStyle = c.top;
-            if (!adj.hasTop) ctx.fillRect(sx, sy, p.w, 4);
-            ctx.fillStyle = c.edge;
-            if (!adj.hasLeft)  ctx.fillRect(sx, sy, 4, p.h);
-            if (!adj.hasRight) ctx.fillRect(sx + p.w - 4, sy, 4, p.h);
-            this._drawBreakOverlay(p, sx, sy);
         }
     }
 
     _drawSpecialPlatform(p, sx, sy, adj, fillSx, fillSy, fillW, fillH) {
-        const { ctx, engine } = this;
-        const c = this._getPlatColors(p);
-
+        const { ctx } = this;
         if (p.type === 'goal') {
-            ctx.fillStyle = c.base; ctx.fillRect(fillSx, fillSy, fillW, fillH);
-            ctx.fillStyle = c.top;  ctx.fillRect(sx + 2, sy + 2, p.w - 4, 5);
-            ctx.fillStyle = c.edge;
-            ctx.font = 'bold 10px monospace';
-            ctx.fillText('★ GOAL ★', sx + p.w / 2 - 30, sy + 11);
+            const pulse = 0.5 + 0.5 * Math.sin(performance.now() * 0.004);
+            const grad = ctx.createLinearGradient(sx, sy, sx, sy + p.h);
+            grad.addColorStop(0,    '#fff6b3');
+            grad.addColorStop(0.45, '#ffd84a');
+            grad.addColorStop(1,    '#b57a00');
+            ctx.fillStyle = grad;
+            ctx.fillRect(fillSx, fillSy, fillW, fillH);
 
-        } else if (p.type === 'save') {
-            ctx.fillStyle = c.base; ctx.fillRect(fillSx, fillSy, fillW, fillH);
-            ctx.fillStyle = c.top;
-            if (!adj.hasTop) ctx.fillRect(sx, sy, p.w, 4);
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.fillStyle = `rgba(255, 240, 160, ${0.18 + pulse * 0.32})`;
+            ctx.fillRect(fillSx, fillSy, fillW, fillH);
+            ctx.restore();
 
-            const fx = sx + p.w - 14, fy = sy + 2;
-            ctx.fillStyle = engine.savepointUnlocked ? '#00ff88' : '#dddddd';
-            ctx.beginPath();
-            ctx.moveTo(fx, fy);
-            ctx.lineTo(fx + 8, fy + 4);
-            ctx.lineTo(fx, fy + 8);
-            ctx.closePath(); ctx.fill();
-            ctx.fillStyle = c.edge;
-            ctx.font = 'bold 10px monospace';
-            ctx.fillText(engine.savepointUnlocked ? '✔ SAVE' : 'SAVE', sx + p.w / 2 - 20, sy + 11);
+            ctx.fillStyle = 'rgba(255,255,255,0.85)';
+            ctx.fillRect(sx + 2, sy + 2, p.w - 4, 3);
+
+            ctx.strokeStyle = `rgba(255, 220, 120, ${0.4 + pulse * 0.5})`;
+            ctx.lineWidth = 2;
+            ctx.strokeRect(fillSx + 1, fillSy + 1, fillW - 2, fillH - 2);
         }
     }
 
@@ -497,6 +498,90 @@ export class Renderer {
 
         ctx.fillStyle = wallTex;
         ctx.fillRect(sx, sy, w, h);
+    }
+
+    _getBreakCracks(group) {
+        if (!this._breakCracks) this._breakCracks = new Map();
+        const id = group[0].breakId;
+        if (this._breakCracks.has(id)) return this._breakCracks.get(id);
+
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const p of group) {
+            minX = Math.min(minX, p.x);
+            minY = Math.min(minY, p.y);
+            maxX = Math.max(maxX, p.x + p.w);
+            maxY = Math.max(maxY, p.y + p.h);
+        }
+        const w = maxX - minX, h = maxY - minY;
+        let s = (id + 1) * 9301 + 49297;
+        const rand = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+
+        const cracks = [];
+        const nCracks = 12 + Math.floor(Math.max(w, h) / 20);
+        for (let i = 0; i < nCracks; i++) {
+            const sx = minX + rand() * w;
+            const sy = minY + rand() * h;
+            const baseAng = rand() * Math.PI * 2;
+            const segs = 4 + Math.floor(rand() * 5);
+            const segLen = 6 + rand() * 12;
+            const pts = [{ x: sx, y: sy }];
+            let a = baseAng, x = sx, y = sy;
+            for (let j = 0; j < segs; j++) {
+                a += (rand() - 0.5) * 1.0;
+                x += Math.cos(a) * segLen;
+                y += Math.sin(a) * segLen;
+                pts.push({ x, y });
+            }
+            cracks.push(pts);
+        }
+        this._breakCracks.set(id, cracks);
+        return cracks;
+    }
+
+    _drawBreakOverlay(group, cameraY) {
+        const ctx = this.ctx;
+        const active = group.filter(b => !b.broken);
+        if (!active.length) return;
+        const r = Math.min((active[0].standTimer || 0) / BREAKABLE_LIFETIME, 1);
+        const cracks = this._getBreakCracks(group);
+
+        ctx.save();
+        ctx.beginPath();
+        for (const b of active) {
+            ctx.rect(b.x - 0.5, b.y - cameraY - 0.5, b.w + 1, b.h + 1);
+        }
+        ctx.clip();
+
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.strokeStyle = 'rgba(0,0,0,1)';
+        ctx.lineWidth = 0.8;
+        for (const pts of cracks) {
+            ctx.beginPath();
+            ctx.moveTo(pts[0].x, pts[0].y - cameraY);
+            for (let j = 1; j < pts.length; j++) ctx.lineTo(pts[j].x, pts[j].y - cameraY);
+            ctx.stroke();
+        }
+
+        if (r > 0) {
+            ctx.lineWidth = 1.2 + r * 2.5;
+            const nActive = Math.ceil(cracks.length * r);
+            for (let i = 0; i < nActive; i++) {
+                const pts = cracks[i];
+                ctx.beginPath();
+                ctx.moveTo(pts[0].x, pts[0].y - cameraY);
+                for (let j = 1; j < pts.length; j++) ctx.lineTo(pts[j].x, pts[j].y - cameraY);
+                ctx.stroke();
+            }
+        }
+
+        ctx.globalCompositeOperation = 'destination-over';
+        ctx.drawImage(this._bgCanvas, 0, 0);
+        ctx.globalCompositeOperation = 'source-over';
+
+        ctx.restore();
     }
 
     _drawIceCrystals(sx, sy, pw, ph) {
@@ -513,64 +598,278 @@ export class Renderer {
         }
     }
 
-    _drawBreakOverlay(p, sx, sy) {
-        if (p.standTimer <= 0) return;
-        const ctx = this.ctx;
-        const ratio = Math.min(p.standTimer / 5000, 1);
-        ctx.strokeStyle = `rgba(255,80,0,${ratio})`;
-        ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
-        ctx.strokeRect(sx + 2, sy + 2, p.w - 4, p.h - 4);
-        ctx.setLineDash([]);
-    }
-
     // ── 선풍기 ────────────────────────────────────────────────────────────────
-    _drawFans() {
+    // ── 화살표 안내판 (충돌 없음) ─────────────────────────────────────────────
+    _drawSigns() {
         const { ctx, engine } = this;
-        const { fans, cameraY, CANVAS_H } = engine;
-        for (const f of fans) {
-            const sx = f.x, sy = f.y - cameraY;
-            if (sy + f.h < 0 || sy > CANVAS_H) continue;
-            ctx.fillStyle = '#222233'; ctx.fillRect(sx, sy, f.w, f.h);
-            ctx.strokeStyle = '#6699bb'; ctx.lineWidth = 2;
-            ctx.strokeRect(sx, sy, f.w, f.h);
-            const cx2 = sx + f.w / 2, cy2 = sy + f.h / 2;
-            ctx.strokeStyle = 'rgba(120,200,255,0.7)'; ctx.lineWidth = 1.5;
-            for (let i = 1; i <= 3; i++) {
-                ctx.beginPath();
-                ctx.moveTo(cx2 + f.windX * (i - 1) * 7, cy2 + f.windY * (i - 1) * 7);
-                ctx.lineTo(cx2 + f.windX * i * 7,       cy2 + f.windY * i * 7);
-                ctx.stroke();
-            }
+        const { signs, cameraY, CANVAS_H } = engine;
+        if (!signs || !signs.length) return;
+
+        const DIR_ANG = {
+            right: 0, down_right: Math.PI / 4, down: Math.PI / 2, down_left: Math.PI * 3 / 4,
+            left: Math.PI, up_left: -Math.PI * 3 / 4, up: -Math.PI / 2, up_right: -Math.PI / 4,
+        };
+
+        for (const s of signs) {
+            const sx = s.x, sy = s.y - cameraY;
+            if (sy + s.h < 0 || sy > CANVAS_H) continue;
+            const cx = sx + s.w / 2;
+            const pad = 4;
+            const bw = s.w - pad * 2, bh = s.h - pad * 2;
+
+            // 기둥
+            ctx.fillStyle = '#5a3a1a';
+            ctx.fillRect(cx - 2, sy + s.h * 0.55, 4, s.h * 0.45);
+
+            // 판자
+            ctx.fillStyle = '#c89a56';
+            ctx.fillRect(sx + pad, sy + pad, bw, bh * 0.6);
+            ctx.strokeStyle = '#6a4418'; ctx.lineWidth = 2;
+            ctx.strokeRect(sx + pad, sy + pad, bw, bh * 0.6);
+
+            // 화살표
+            const ang = DIR_ANG[s.dir] ?? 0;
+            const r = Math.min(bw, bh * 0.6) * 0.38;
+            const acx = cx, acy = sy + pad + bh * 0.3;
+            ctx.save();
+            ctx.translate(acx, acy);
+            ctx.rotate(ang);
+            ctx.fillStyle = '#3a1a00';
+            ctx.beginPath();
+            ctx.moveTo(-r, -r * 0.28);
+            ctx.lineTo( r * 0.35, -r * 0.28);
+            ctx.lineTo( r * 0.35, -r * 0.55);
+            ctx.lineTo( r,        0);
+            ctx.lineTo( r * 0.35,  r * 0.55);
+            ctx.lineTo( r * 0.35,  r * 0.28);
+            ctx.lineTo(-r,         r * 0.28);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
         }
     }
 
-    // ── 함정 ─────────────────────────────────────────────────────────────────
+    _drawFans() {
+        const { ctx, engine } = this;
+        const { fans, cameraY, CANVAS_H } = engine;
+        const now = performance.now();
+
+        for (const f of fans) {
+            const sx = f.x, sy = f.y - cameraY;
+
+            const zx = f.zoneX ?? f.x, zy = f.zoneY ?? f.y;
+            const zw = f.zoneW ?? f.w, zh = f.zoneH ?? f.h;
+            const zsy = zy - cameraY;
+
+            const dx = Math.sign(f.windX || 0);
+            const dy = Math.sign(f.windY || 0);
+
+            // ── 바람 영향 구역: 물결 애니메이션 ──
+            if ((zsy + zh >= 0 && zsy <= CANVAS_H)) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(zx, zsy, zw, zh);
+                ctx.clip();
+
+                ctx.lineWidth = 2;
+                ctx.lineCap = 'round';
+
+                const alongX = dx !== 0;
+                const L = alongX ? zw : zh;
+                const W = alongX ? zh : zw;
+
+                ctx.lineWidth = 2.5;
+
+                const hash = (a, b) => {
+                    let h = (a * 2654435761 + b * 1597334677) >>> 0;
+                    h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b);
+                    h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35);
+                    h ^= h >>> 16;
+                    return (h >>> 0) / 4294967296;
+                };
+
+                const nWaves = Math.max(6, Math.round(L / 30));
+                const baseDashLen = Math.min(24, L * 0.18);
+                const travelSpeed = 0.0011;
+                const rawPhase = now * travelSpeed;
+                const fanSeed = ((f.x * 73856093) ^ (f.y * 19349663)) >>> 0;
+
+                for (let i = 0; i < nWaves; i++) {
+                    const phaseOffset = hash(fanSeed + i, 0);
+                    const phase_i = rawPhase + phaseOffset;
+                    const cycleIdx = Math.floor(phase_i);
+                    const prog = phase_i - cycleIdx;
+
+                    let alpha;
+                    if (prog < 0.1)       alpha = prog / 0.1;
+                    else if (prog < 0.75) alpha = 1;
+                    else                  alpha = (1 - prog) / 0.25;
+                    if (alpha <= 0) continue;
+
+                    const laneRand = hash(fanSeed + i, cycleIdx + 1);
+                    const lenRand  = 0.45 + hash(fanSeed + i, cycleIdx + 2) * 0.85;
+                    const dashLen  = baseDashLen * lenRand;
+
+                    const alongStart = alongX
+                        ? (dx > 0 ? zx + prog * L : zx + (1 - prog) * L)
+                        : (dy > 0 ? zsy + prog * L : zsy + (1 - prog) * L);
+                    const perpPos = (alongX ? zsy : zx) + (0.1 + laneRand * 0.8) * W;
+
+                    ctx.strokeStyle = `rgba(170,225,255,${0.85 * alpha})`;
+                    ctx.beginPath();
+                    if (alongX) {
+                        ctx.moveTo(alongStart, perpPos);
+                        ctx.lineTo(alongStart + dx * dashLen, perpPos);
+                    } else {
+                        ctx.moveTo(perpPos, alongStart);
+                        ctx.lineTo(perpPos, alongStart + dy * dashLen);
+                    }
+                    ctx.stroke();
+                }
+
+                ctx.restore();
+            }
+
+            // ── 대포 본체 ──
+            if (sy + f.h < 0 || sy > CANVAS_H) continue;
+            const cx = sx + f.w / 2, cy = sy + f.h / 2;
+            const ang = Math.atan2(dy, dx);
+
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(ang);
+
+            const bodyW = f.w * 0.95, bodyH = f.h * 0.55;
+            ctx.fillStyle = '#2a2a36';
+            ctx.beginPath();
+            ctx.ellipse(0, 0, bodyW / 2, bodyH / 2, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#0a0a12';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // 포신 하이라이트 띠
+            ctx.strokeStyle = 'rgba(120,140,160,0.5)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(-bodyW / 2 + 4, -bodyH / 2 + 3);
+            ctx.lineTo(bodyW / 2 - 4, -bodyH / 2 + 3);
+            ctx.stroke();
+
+            // 총구 (앞쪽)
+            const muzzleR = bodyH / 2 * 0.9;
+            ctx.fillStyle = '#050508';
+            ctx.beginPath();
+            ctx.ellipse(bodyW / 2 - 2, 0, muzzleR * 0.5, muzzleR, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#6a6a80';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // 총구 링
+            ctx.strokeStyle = '#aaaabb';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.ellipse(bodyW / 2 - 1, 0, muzzleR * 0.55, muzzleR * 1.05, 0, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.restore();
+
+            // 바퀴 (회전과 무관하게 아래쪽)
+            ctx.fillStyle = '#1a1a22';
+            ctx.beginPath();
+            ctx.arc(cx - f.w * 0.25, cy + f.h * 0.3, f.h * 0.22, 0, Math.PI * 2);
+            ctx.arc(cx + f.w * 0.25, cy + f.h * 0.3, f.h * 0.22, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#55556a';
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+        }
+    }
+
+    // ── 함정 (회전 톱날) ─────────────────────────────────────────────────────
     _drawTraps() {
         const { ctx, engine } = this;
         const { traps, cameraY, CANVAS_H } = engine;
+        const rot = performance.now() * 0.012; // 회전 각속도
+
         for (const t of traps) {
             const sx = t.x, sy = t.y - cameraY;
             if (sy + t.h < 0 || sy > CANVAS_H) continue;
-            const cx2 = sx + t.w / 2, cy2 = sy + t.h / 2, r = t.w / 2;
-            ctx.fillStyle = '#bb0000';
+            const cx = sx + t.w / 2, cy = sy + t.h / 2;
+            const r = Math.min(t.w, t.h) / 2;
+
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(rot);
+
+            // 톱니 실루엣 (삼각 톱니 16개)
+            const teeth = 16;
+            const step = (Math.PI * 2) / teeth;
+            const rIn = r * 0.78;
             ctx.beginPath();
-            ctx.moveTo(cx2, cy2 - r); ctx.lineTo(cx2 + r, cy2);
-            ctx.lineTo(cx2, cy2 + r); ctx.lineTo(cx2 - r, cy2);
-            ctx.closePath(); ctx.fill();
-            ctx.strokeStyle = '#ff5555'; ctx.lineWidth = 2; ctx.stroke();
-            ctx.fillStyle = '#ff3333';
-            const spike = r * 0.5;
-            [
-                [cx2, cy2 - r - spike, cx2 - 3, cy2 - r + 3, cx2 + 3, cy2 - r + 3],
-                [cx2, cy2 + r + spike, cx2 - 3, cy2 + r - 3, cx2 + 3, cy2 + r - 3],
-                [cx2 - r - spike, cy2, cx2 - r + 3, cy2 - 3, cx2 - r + 3, cy2 + 3],
-                [cx2 + r + spike, cy2, cx2 + r - 3, cy2 - 3, cx2 + r - 3, cy2 + 3],
-            ].forEach(([ax, ay, bx, by, ccx, ccy]) => {
-                ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
-                ctx.lineTo(ccx, ccy); ctx.closePath(); ctx.fill();
-            });
-            ctx.fillStyle = '#fff'; ctx.font = 'bold 13px monospace';
-            ctx.fillText('!', cx2 - 4, cy2 + 5);
+            for (let i = 0; i < teeth; i++) {
+                const a0 = i * step;
+                const a1 = a0 + step * 0.4; // 톱니 끝 (뾰족)
+                const a2 = a0 + step;
+                const p0x = Math.cos(a0) * rIn,  p0y = Math.sin(a0) * rIn;
+                const p1x = Math.cos(a1) * r,    p1y = Math.sin(a1) * r;
+                const p2x = Math.cos(a2) * rIn,  p2y = Math.sin(a2) * rIn;
+                if (i === 0) ctx.moveTo(p0x, p0y);
+                ctx.lineTo(p1x, p1y);
+                ctx.lineTo(p2x, p2y);
+            }
+            ctx.closePath();
+            ctx.fillStyle = '#d8d8e0';
+            ctx.fill();
+            ctx.strokeStyle = '#20202a';
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+
+            // 원반 본체
+            const bodyGrad = ctx.createRadialGradient(-r * 0.3, -r * 0.3, r * 0.1, 0, 0, rIn);
+            bodyGrad.addColorStop(0, '#aaaab4');
+            bodyGrad.addColorStop(1, '#55555e');
+            ctx.fillStyle = bodyGrad;
+            ctx.beginPath();
+            ctx.arc(0, 0, rIn, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // 방사형 스포크 (회전감)
+            ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+            ctx.lineWidth = 1.5;
+            for (let i = 0; i < 6; i++) {
+                const a = (i / 6) * Math.PI * 2;
+                ctx.beginPath();
+                ctx.moveTo(Math.cos(a) * r * 0.28, Math.sin(a) * r * 0.28);
+                ctx.lineTo(Math.cos(a) * r * 0.68, Math.sin(a) * r * 0.68);
+                ctx.stroke();
+            }
+
+            // 중심 허브
+            ctx.fillStyle = '#2a2a32';
+            ctx.beginPath();
+            ctx.arc(0, 0, r * 0.22, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#6a6a78';
+            ctx.beginPath();
+            ctx.arc(0, 0, r * 0.1, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+
+            // 피 튀김 얼룩 (톱니 끝부분, 회전과 무관)
+            ctx.fillStyle = 'rgba(180,20,20,0.55)';
+            for (let i = 0; i < 3; i++) {
+                const sa = (i * 2.1) + (performance.now() * 0.0003); // 살짝 느린 움직임
+                const sr = r * (0.92 + (i % 2) * 0.06);
+                ctx.beginPath();
+                ctx.arc(cx + Math.cos(sa) * sr, cy + Math.sin(sa) * sr, 1.8, 0, Math.PI * 2);
+                ctx.fill();
+            }
         }
     }
 

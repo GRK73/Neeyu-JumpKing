@@ -1,12 +1,13 @@
 import {
     SPRITE_INFO, FRAME_DUR, GRAVITY, MOVE_SPEED, MAX_CHARGE,
     MIN_VY, MAX_VY, MAX_VX, CELL, CHAR_SCALE, HITBOX_W_RATIO, HITBOX_H_RATIO,
+    TERMINAL_VY, END_PREDICT_FRAMES, BREAKABLE_LIFETIME, BREAKABLE_RESPAWN,
 } from './constants.js';
 
 // ── 플랫폼 시각적 병합 (Greedy Meshing): 인접한 동일 블록들을 하나의 큰 덩어리로 융합 ──
 export function mergeVisualPlatforms(platforms) {
     const isMergeable = p => {
-        if (p.type === 'diag_r' || p.type === 'diag_l' || p.type === 'goal' || p.type === 'save') return false;
+        if (p.type === 'diag_r' || p.type === 'diag_l' || p.type === 'goal') return false;
         if (p.gimmick === 'moving' || p.gimmick === 'breakable') return false;
         return true; // wall, floor, 일반 지형 등 모두 포함
     };
@@ -101,12 +102,12 @@ export class GameEngine {
      * @param {{
      *   canvasW: number, canvasH: number,
      *   platforms: object[], fans: object[], traps: object[],
+     *   signs?: object[],
      *   mapH: number,
-     *   savePlatformY?: number|null,
      *   stages?: object[]|null
      * }} opts
      */
-    constructor({ canvasW, canvasH, platforms, fans, traps, mapH, savePlatformY = null, stages = null }) {
+    constructor({ canvasW, canvasH, platforms, fans, traps, signs = [], mapH, stages = null }) {
         this.CANVAS_W = canvasW;
         this.CANVAS_H = canvasH;
         this.MAP_W    = Math.floor(canvasW / CELL) * CELL;
@@ -125,7 +126,7 @@ export class GameEngine {
         this.physPlatforms = buildPhysPlatforms(this.platforms);
         this.fans          = fans;
         this.traps         = traps;
-        this.savePlatformY = savePlatformY;
+        this.signs         = signs;
         this.stages        = stages;
 
         // 게임 상태
@@ -146,12 +147,48 @@ export class GameEngine {
         // 모서리 뭉툭 처리 마진: 이 픽셀 이내의 겹침은 코너로 판정해 밀어냄
         this.CORNER_M = Math.round(this.HITBOX_H * 0.15);
 
-        // 스폰 / 세이브
+        // 부서지는 블록 그룹화 (Flood-fill)
+        const breakables = this.platforms.filter(p => p.gimmick === 'breakable');
+        let breakGroupId = 0;
+        for (const p of breakables) {
+            if (p.breakGroup) continue;
+            const group = [];
+            const queue = [p];
+            p.breakGroup = group;
+            p.breakId = breakGroupId++;
+            
+            while (queue.length > 0) {
+                const curr = queue.shift();
+                group.push(curr);
+                for (const o of breakables) {
+                    if (!o.breakGroup) {
+                        const adjX = (o.x < curr.x + curr.w && o.x + o.w > curr.x);
+                        const adjY = (o.y < curr.y + curr.h && o.y + o.h > curr.y);
+                        if ((adjX && Math.abs(o.y - (curr.y + curr.h)) <= 2) ||
+                            (adjX && Math.abs(curr.y - (o.y + o.h)) <= 2) ||
+                            (adjY && Math.abs(o.x - (curr.x + curr.w)) <= 2) ||
+                            (adjY && Math.abs(curr.x - (o.x + o.w)) <= 2)) {
+                            o.breakGroup = group;
+                            o.breakId = p.breakId;
+                            queue.push(o);
+                        }
+                    }
+                }
+            }
+            
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const b of group) {
+                minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
+                maxX = Math.max(maxX, b.x + b.w); maxY = Math.max(maxY, b.y + b.h);
+            }
+            for (const b of group) {
+                b.groupBounds = { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+            }
+        }
+
+        // 스폰
         this.spawnPx = this.px;
         this.spawnPy = this.py;
-        this.savepointUnlocked = false;
-        this.saveX = this.px;
-        this.saveY = this.py;
 
         // 이벤트 (매 tick 후 한 번 읽고 null로 리셋)
         this.lastEvent = null; // 'goal' | 'respawn' | null
@@ -192,6 +229,7 @@ export class GameEngine {
         this._updateGimmicks(dt);
         this._handleMovement(keys);
         this._updatePhysics();
+        this._checkTrapCollision();
         this._checkEndTransition();
         this._updateAnimation(dt);
         this._updateCamera();
@@ -221,7 +259,7 @@ export class GameEngine {
             const prevX = x, prevY = y;
             const prevBot = y + HITBOX_H;
             lvy += GRAVITY;
-            if (lvy > 16) lvy = 16; // 터미널 벨로시티 동기화
+            if (lvy > TERMINAL_VY) lvy = TERMINAL_VY; // 터미널 벨로시티 동기화
             x += lvx; y += lvy;
             x = this.wrapX(x);
 
@@ -263,7 +301,7 @@ export class GameEngine {
         this.vx = dir * MAX_VX * Math.pow(charge, 0.55);
         this.vy = MIN_VY + (MAX_VY - MIN_VY) * charge;
         const total  = this._framesUntilLanding(this.px, this.py, this.vx, this.vy);
-        const avail  = Math.max(total - 18, 1);
+        const avail  = Math.max(total - END_PREDICT_FRAMES, 1);
         this.startFrameDur = Math.max((avail * (1000 / 60)) / SPRITE_INFO.start.frames, 8);
         this.standingOn    = null;
         this._endPredicted  = false;
@@ -274,7 +312,11 @@ export class GameEngine {
         if (this.state === 'ready') {
             this.px += this.onMovingDelta.x;
             this.py += this.onMovingDelta.y;
-            this.px  = this.wrapX(this.px);
+            if (this.standingOn?.gimmick === 'ice') {
+                this.vx *= 0.97;
+                this.px += this.vx;
+            }
+            this.px = this.wrapX(this.px);
             return;
         }
         if (this.state !== 'stand' && this.state !== 'run' && this.state !== 'end') return;
@@ -390,7 +432,7 @@ export class GameEngine {
 
         const prevX = this.px, prevY = this.py;
         this.vy += GRAVITY;
-        if (this.vy > 16) this.vy = 16; // 최대 낙하 속도(Terminal Velocity) 제한
+        if (this.vy > TERMINAL_VY) this.vy = TERMINAL_VY; // 최대 낙하 속도(Terminal Velocity) 제한
         this.px += this.vx;
         this.py += this.vy;
         this.px  = this.wrapX(this.px);
@@ -450,12 +492,6 @@ export class GameEngine {
                 this.vy = 0;
                 this.standingOn = p;
                 if (this.state === 'start') this._changeState('end');
-                if (this.savePlatformY !== null) {
-                    if (p.type === 'save' || this.py + HITBOX_H < this.savePlatformY) {
-                        this.savepointUnlocked = true;
-                        this.saveX = this.px; this.saveY = this.py;
-                    }
-                }
                 if (p.gimmick === 'breakable') p.standTimer = 0;
                 if (p.type === 'goal') this.lastEvent = 'goal';
                 return;
@@ -505,8 +541,6 @@ export class GameEngine {
 
         this.px = this.wrapX(effPx);
 
-        this._checkTrapCollision();
-
         if (this.py > this.MAP_H) this._respawn();
     }
 
@@ -515,7 +549,12 @@ export class GameEngine {
         for (const t of this.traps) {
             if (this.px + HITBOX_W <= t.x || this.px >= t.x + t.w) continue;
             if (this.py + HITBOX_H <= t.y || this.py >= t.y + t.h) continue;
-            this.vx = t.bounceVX; this.vy = t.bounceVY;
+            const mag = Math.abs(t.bounceVX);
+            let dir;
+            if (this.vx > 0.01)       dir = -1;
+            else if (this.vx < -0.01) dir =  1;
+            else                      dir = this.facingRight ? -1 : 1;
+            this.vx = mag * dir; this.vy = t.bounceVY;
             if (this.state !== 'start') this._changeState('start');
             this._endPredicted = false;
             return;
@@ -523,18 +562,25 @@ export class GameEngine {
     }
 
     _applyFanForce() {
-        const cx = this.px + this.HITBOX_W / 2;
-        const cy = this.py + this.HITBOX_H / 2;
+        const plx = this.px, ply = this.py;
+        const phw = this.HITBOX_W, phh = this.HITBOX_H;
         let anyFan = false;
         for (const f of this.fans) {
-            const fx = f.x + f.w / 2, fy = f.y + f.h / 2;
-            const dist = Math.sqrt((cx - fx) ** 2 + (cy - fy) ** 2);
-            if (dist < f.range) {
-                const k = 1 - dist / f.range;
-                this.vx += f.windX * k;
-                this.vy += f.windY * k;
-                anyFan = true;
-            }
+            const zx = f.zoneX ?? f.x, zy = f.zoneY ?? f.y;
+            const zw = f.zoneW ?? f.w, zh = f.zoneH ?? f.h;
+            if (plx + phw <= zx || plx >= zx + zw) continue;
+            if (ply + phh <= zy || ply >= zy + zh) continue;
+
+            let t = 1;
+            if (f.windX > 0)       t = 1 - (plx - zx) / Math.max(1, zw);
+            else if (f.windX < 0)  t = 1 - ((zx + zw) - (plx + phw)) / Math.max(1, zw);
+            else if (f.windY > 0)  t = 1 - (ply - zy) / Math.max(1, zh);
+            else if (f.windY < 0)  t = 1 - ((zy + zh) - (ply + phh)) / Math.max(1, zh);
+            t = Math.max(0.15, Math.min(1, t));
+
+            this.vx += f.windX * t;
+            this.vy += f.windY * t;
+            anyFan = true;
         }
         if (anyFan) {
             const cap = MAX_VX * 2;
@@ -544,11 +590,7 @@ export class GameEngine {
     }
 
     _respawn() {
-        if (this.savepointUnlocked) {
-            this.px = this.saveX; this.py = this.saveY;
-        } else {
-            this.px = this.spawnPx; this.py = this.spawnPy;
-        }
+        this.px = this.spawnPx; this.py = this.spawnPy;
         this.vx = 0; this.vy = 0;
         this.standingOn = null;
         this._changeState('stand');
@@ -557,7 +599,7 @@ export class GameEngine {
 
     _checkEndTransition() {
         if (this.state !== 'start' || this.vy < 0 || this._endPredicted) return;
-        if (this._framesUntilLanding(this.px, this.py, this.vx, this.vy, 18) <= 18) {
+        if (this._framesUntilLanding(this.px, this.py, this.vx, this.vy, END_PREDICT_FRAMES) <= END_PREDICT_FRAMES) {
             this._endPredicted = true;
             this._changeState('end');
         }
@@ -567,24 +609,40 @@ export class GameEngine {
         this.onMovingDelta.x = 0;
         this.onMovingDelta.y = 0;
 
+        const processedGroups = new Set();
+
         for (const p of this.platforms) {
             if (p.gimmick === 'breakable') {
+                if (!p.breakGroup) continue; // Safety check
+                if (processedGroups.has(p.breakGroup)) continue;
+                processedGroups.add(p.breakGroup);
+                
+                let groupStoodOn = false;
+                for (const b of p.breakGroup) {
+                    if (this.standingOn === b) { groupStoodOn = true; break; }
+                }
+                
                 if (p.broken) {
                     p.respawnTimer += dt;
-                    if (p.respawnTimer >= 10000) {
-                        p.broken = false; p.respawnTimer = 0; p.standTimer = 0;
+                    if (p.respawnTimer >= BREAKABLE_RESPAWN) {
+                        for (const b of p.breakGroup) { b.broken = false; b.respawnTimer = 0; b.standTimer = 0; }
+                    } else {
+                        for (const b of p.breakGroup) b.respawnTimer = p.respawnTimer;
                     }
-                } else if (this.standingOn === p) {
+                } else if (groupStoodOn) {
                     p.standTimer += dt;
-                    if (p.standTimer >= 5000) {
-                        p.broken = true; p.respawnTimer = 0;
+                    if (p.standTimer >= BREAKABLE_LIFETIME) {
+                        for (const b of p.breakGroup) { b.broken = true; b.respawnTimer = 0; }
                         this.standingOn = null;
-                        if (this.state === 'stand' || this.state === 'run') {
+                        if (this.state === 'stand' || this.state === 'run' || this.state === 'ready') {
                             this.vx = 0; this.vy = 0; this._changeState('start');
                         }
+                    } else {
+                        for (const b of p.breakGroup) b.standTimer = p.standTimer;
                     }
                 } else {
                     p.standTimer = Math.max(0, p.standTimer - dt * 0.3);
+                    for (const b of p.breakGroup) b.standTimer = p.standTimer;
                 }
             }
 

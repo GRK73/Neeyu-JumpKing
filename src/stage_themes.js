@@ -39,14 +39,5 @@ export function themeAt(worldY, stages) {
 
 // ── 스테이지별 배경 그라디언트 색상 ───────────────────────────────────────
 export function getStageBg(worldY, stages = null) {
-    if (stages && stages.length > 0) return themeAt(worldY, stages).bg;
-    if (worldY > 6700) return ['#120800', '#1a0e00'];
-    if (worldY > 5900) return ['#050814', '#100f1a'];
-    if (worldY > 5100) return ['#200808', '#300a0a'];
-    if (worldY > 4300) return ['#0f1218', '#1c222c'];
-    if (worldY > 3500) return ['#1a0505', '#280808'];
-    if (worldY > 2700) return ['#071407', '#0d200d'];
-    if (worldY > 1900) return ['#1e3b52', '#3d6c82'];
-    if (worldY > 1100) return ['#4a90e2', '#87cefa'];
-    return               ['#050510', '#0a0a1a'];
+    return themeAt(worldY, stages).bg;
 }

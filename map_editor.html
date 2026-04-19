@@ -118,7 +118,6 @@ body.stage-place-mode #stagePlaceHint { display:block; }
   <button class="tool-btn active" data-tool="wall">Wall [W]</button>
   <button class="tool-btn" data-tool="wall_breakable">Break [B]</button>
   <button class="tool-btn" data-tool="wall_ice">Ice [I]</button>
-  <button class="tool-btn" data-tool="wall_save">Save [S]</button>
   <button class="tool-btn" data-tool="wall_goal">Goal [G]</button>
 
   <div class="sep"></div>
@@ -130,8 +129,10 @@ body.stage-place-mode #stagePlaceHint { display:block; }
 
   <button class="tool-btn" data-tool="trap">Trap [T]</button>
   <button class="tool-btn" data-tool="fan">Fan [N]</button>
+  <button class="tool-btn" data-tool="sign">Sign [Y]</button>
   <span id="fanDirBtn" style="color:#88ccff;cursor:pointer;padding:3px 6px;border:1px solid #335;border-radius:3px;"
-        title="D키로 방향 변경">dir:→ [D]</span>
+        title="D키로 방향 변경 (Fan/Sign 공용)">dir:→ [D]</span>
+  <span id="fanReachLabel" style="color:#88ccff;font-size:10px;">reach:5 [[]]</span>
 
   <div class="sep"></div>
 
@@ -142,6 +143,7 @@ body.stage-place-mode #stagePlaceHint { display:block; }
   <div class="sep"></div>
 
   <button class="tool-btn" data-tool="erase">Erase [E]</button>
+  <button class="tool-btn" data-tool="setstart" style="color:#66ccff;">Start [O]</button>
 
   <div style="flex:1"></div>
 
@@ -301,7 +303,10 @@ function addScreenToTop() {
         const [cs, rs] = key.split(',');
         const c = +cs, r = +rs;
         for (const item of val) {
-            if (item.type === 'moving' && item.endR !== undefined) item.endR += n;
+            if (item.type === 'moving') {
+                if (item.r !== undefined)    item.r    += n;
+                if (item.endR !== undefined) item.endR += n;
+            }
         }
         newGrid.set(`${c},${r + n}`, val);
     }
@@ -309,6 +314,7 @@ function addScreenToTop() {
     for (const [k, v] of newGrid) grid.set(k, v);
     stages.forEach(s => s.topRow += n);
     if (spawnMarker) spawnMarker.r += n;
+    if (startPoint)  startPoint.r  += n;
     ROWS += n;
     MAP_H = ROWS * CELL;
     camY = 0; // 새로 생긴 맨 위로 스크롤
@@ -398,13 +404,18 @@ let currentTool = 'wall';
 const fanDirSymbols = { right:'→', left:'←', up:'↑', down:'↓' };
 const fanDirOrder   = ['right','left','up','down'];
 let fanDir = 'right';
+let fanReach = 5;
+const signDirSymbols = { right:'→', down_right:'↘', down:'↓', down_left:'↙', left:'←', up_left:'↖', up:'↑', up_right:'↗' };
+const signDirOrder   = ['right','down_right','down','down_left','left','up_left','up','up_right'];
+let signDir = 'right';
 let movingSpeed = 1.2;
 let movingLength = 1;
 let movingStep  = 0;
 let movingStart = null;
 
 // 스폰 지점 (에디터 표시용)
-let spawnMarker = null; // { c, r }
+let spawnMarker = null; // { c, r } — 임시 (Play 클릭)
+let startPoint  = null; // { c, r } — 영구 (맵과 함께 저장)
 
 // ── 좌표 변환 ─────────────────────────────────────────────────────────────────
 function screenToGrid(sx, sy) {
@@ -514,15 +525,26 @@ function render() {
         }
     }
 
-    // 스폰 마커
+    // 영구 스타트 포인트 (맵과 함께 저장)
+    if (startPoint) {
+        const { sx, sy } = gridToScreen(startPoint.c, startPoint.r);
+        ctx.fillStyle = 'rgba(100,180,255,0.25)';
+        ctx.fillRect(sx, sy, CELL, CELL);
+        ctx.strokeStyle = '#66ccff'; ctx.lineWidth = 2;
+        ctx.strokeRect(sx+1, sy+1, CELL-2, CELL-2);
+        ctx.fillStyle = '#66ccff'; ctx.font = 'bold 10px monospace';
+        ctx.fillText('START', sx+2, sy+14);
+    }
+
+    // 임시 스폰 마커 (Play 클릭)
     if (spawnMarker) {
         const { sx, sy } = gridToScreen(spawnMarker.c, spawnMarker.r);
         ctx.fillStyle = 'rgba(100,255,100,0.25)';
         ctx.fillRect(sx, sy, CELL, CELL);
-        ctx.strokeStyle = '#88ff88'; ctx.lineWidth = 2;
-        ctx.strokeRect(sx+1, sy+1, CELL-2, CELL-2);
+        ctx.strokeStyle = '#88ff88'; ctx.lineWidth = 2; ctx.setLineDash([3,3]);
+        ctx.strokeRect(sx+1, sy+1, CELL-2, CELL-2); ctx.setLineDash([]);
         ctx.fillStyle = '#88ff88'; ctx.font = 'bold 10px monospace';
-        ctx.fillText('START', sx+2, sy+14);
+        ctx.fillText('PLAY', sx+2, sy+14);
     }
 
     // 선택 범위
@@ -574,7 +596,6 @@ function drawItem(item, sx, sy) {
         const COLORS = {
             breakable: ['#2d211f', 'BREAK', '#ccaa55'],
             ice:       ['#1f2b35', 'ICE',   '#99ddff'],
-            save:      ['#212d26', 'SAVE',  '#77ffaa'],
             goal:      ['#302a0a', 'GOAL',  '#ffee44'],
         };
         const [bg,label,labelColor] = COLORS[subtype] || ['#1c1c28','???','#fff'];
@@ -601,20 +622,57 @@ function drawItem(item, sx, sy) {
         ctx.strokeStyle='#ff5533'; ctx.lineWidth=1.5; ctx.stroke();
         ctx.fillStyle='#fff'; ctx.font='bold 11px monospace'; ctx.fillText('!',cx-4,cy+4);
     } else if (t==='fan') {
-        ctx.fillStyle='#1a2a3a'; ctx.fillRect(sx+4,sy+4,CELL-8,CELL-8);
-        ctx.strokeStyle='#4488aa'; ctx.lineWidth=1.5; ctx.strokeRect(sx+4,sy+4,CELL-8,CELL-8);
-        const cx=sx+CELL/2, cy=sy+CELL/2;
         const DV={right:[1,0],left:[-1,0],up:[0,-1],down:[0,1]};
         const [dx,dy]=DV[item.dir]||DV.right;
-        ctx.strokeStyle='#55bbee'; ctx.lineWidth=2;
-        ctx.beginPath(); ctx.moveTo(cx-dx*9,cy-dy*9); ctx.lineTo(cx+dx*9,cy+dy*9); ctx.stroke();
-        ctx.fillStyle='#55bbee';
+        const reach = item.reach || 5;
+
+        // 영향 구역
+        let zx=sx, zy=sy, zw=CELL, zh=CELL;
+        if (dx>0)      { zx=sx+CELL;        zw=reach*CELL; }
+        else if (dx<0) { zx=sx-reach*CELL;  zw=reach*CELL; }
+        else if (dy>0) { zy=sy+CELL;        zh=reach*CELL; }
+        else if (dy<0) { zy=sy-reach*CELL;  zh=reach*CELL; }
+        ctx.fillStyle='rgba(120,200,255,0.10)';
+        ctx.fillRect(zx, zy, zw, zh);
+        ctx.strokeStyle='rgba(120,200,255,0.5)'; ctx.lineWidth=1;
+        ctx.strokeRect(zx+0.5, zy+0.5, zw-1, zh-1);
+
+        // 대포 본체 (타원)
+        const cx=sx+CELL/2, cy=sy+CELL/2;
+        const ang=Math.atan2(dy,dx);
+        ctx.save(); ctx.translate(cx,cy); ctx.rotate(ang);
+        ctx.fillStyle='#2a2a36';
+        ctx.beginPath(); ctx.ellipse(0,0,CELL*0.42,CELL*0.25,0,0,Math.PI*2); ctx.fill();
+        ctx.strokeStyle='#0a0a12'; ctx.lineWidth=1.5; ctx.stroke();
+        // 총구
+        ctx.fillStyle='#050508';
+        ctx.beginPath(); ctx.ellipse(CELL*0.38,0,CELL*0.08,CELL*0.20,0,0,Math.PI*2); ctx.fill();
+        ctx.strokeStyle='#aaaabb'; ctx.lineWidth=1.3; ctx.stroke();
+        ctx.restore();
+        // 바퀴
+        ctx.fillStyle='#1a1a22';
         ctx.beginPath();
-        ctx.moveTo(cx+dx*9,cy+dy*9);
-        ctx.lineTo(cx+dx*9-dy*5-dx*5,cy+dy*9+dx*5-dy*5);
-        ctx.lineTo(cx+dx*9+dy*5-dx*5,cy+dy*9-dx*5-dy*5);
+        ctx.arc(cx-CELL*0.22,cy+CELL*0.28,CELL*0.12,0,Math.PI*2);
+        ctx.arc(cx+CELL*0.22,cy+CELL*0.28,CELL*0.12,0,Math.PI*2);
+        ctx.fill();
+        ctx.fillStyle='#5599bb'; ctx.font='7px monospace'; ctx.fillText(`r${reach}`,sx+3,sy+CELL-3);
+    } else if (t==='sign') {
+        ctx.fillStyle='#5a3a1a'; ctx.fillRect(sx+CELL/2-1, sy+CELL*0.55, 2, CELL*0.4);
+        ctx.fillStyle='#c89a56'; ctx.fillRect(sx+4, sy+4, CELL-8, CELL*0.55);
+        ctx.strokeStyle='#6a4418'; ctx.lineWidth=1; ctx.strokeRect(sx+4, sy+4, CELL-8, CELL*0.55);
+        const cx=sx+CELL/2, cy=sy+CELL*0.32;
+        const ANG={right:0,down_right:Math.PI/4,down:Math.PI/2,down_left:Math.PI*3/4,
+                   left:Math.PI,up_left:-Math.PI*3/4,up:-Math.PI/2,up_right:-Math.PI/4};
+        const ang=ANG[item.dir] ?? 0;
+        const r=7;
+        ctx.save(); ctx.translate(cx, cy); ctx.rotate(ang);
+        ctx.strokeStyle='#3a1a00'; ctx.lineWidth=2;
+        ctx.beginPath(); ctx.moveTo(-r,0); ctx.lineTo(r,0); ctx.stroke();
+        ctx.fillStyle='#3a1a00';
+        ctx.beginPath();
+        ctx.moveTo(r,0); ctx.lineTo(r-4,-4); ctx.lineTo(r-4,4);
         ctx.closePath(); ctx.fill();
-        ctx.fillStyle='#5599bb'; ctx.font='8px monospace'; ctx.fillText('FAN',sx+5,sy+CELL-3);
+        ctx.restore();
     } else if (t==='moving') {
         const w = (item.len || 1) * CELL;
         ctx.fillStyle='#1a2255'; ctx.fillRect(sx,sy,w,14);
@@ -648,7 +706,7 @@ function fillSel(toolType) {
     beginBatch();
     for (let r = s.r1; r <= s.r2; r++)
         for (let c = s.c1; c <= s.c2; c++)
-            addItem(c, r, { type: toolType, ...(toolType === 'fan' && { dir: fanDir }) });
+            addItem(c, r, { type: toolType, ...(toolType === 'fan' && { dir: fanDir, reach: fanReach }), ...(toolType === 'sign' && { dir: signDir }) });
     endBatch();
     render();
 }
@@ -744,11 +802,18 @@ function paint(sx, sy, isFirst) {
     const {c,r} = screenToGrid(sx, sy);
     const k = cellKey(c,r);
 
-    // 스폰 선택 모드
+    // 스폰 선택 모드 (Play 임시 스폰)
     if (currentTool === 'spawn') {
         spawnMarker = {c, r};
         render();
         startPlay(c * CELL, r * CELL);
+        return;
+    }
+
+    // 영구 스타트 포인트 설정
+    if (currentTool === 'setstart') {
+        startPoint = {c, r};
+        render();
         return;
     }
 
@@ -768,7 +833,7 @@ function paint(sx, sy, isFirst) {
 
     if (k===lastKey) return;
     lastKey=k;
-    addItem(c, r, { type:currentTool, ...(currentTool==='fan' && {dir:fanDir}) });
+    addItem(c, r, { type:currentTool, ...(currentTool==='fan' && {dir:fanDir, reach:fanReach}), ...(currentTool==='sign' && {dir:signDir}) });
     render();
 }
 
@@ -781,8 +846,8 @@ canvas.addEventListener('wheel', e => {
 }, {passive:false});
 
 // ── 키보드 ────────────────────────────────────────────────────────────────────
-const TOOL_KEYS = {w:'wall',f:'wall',b:'wall_breakable',i:'wall_ice',s:'wall_save',
-                   g:'wall_goal',t:'trap',n:'fan',m:'moving',e:'erase'};
+const TOOL_KEYS = {w:'wall',f:'wall',b:'wall_breakable',i:'wall_ice',
+                   g:'wall_goal',t:'trap',n:'fan',y:'sign',m:'moving',e:'erase'};
 window.addEventListener('keydown', ev => {
     // 플레이 중이면 에디터 키 무시
     if (document.getElementById('playOverlay').classList.contains('show')) return;
@@ -798,6 +863,7 @@ window.addEventListener('keydown', ev => {
 
     const k = ev.key;
     if (k.toLowerCase()==='p') { enterSpawnMode(); return; }
+    if (k.toLowerCase()==='o') { selectTool('setstart'); return; }
 
     // 선택 범위가 있을 때 도구 키 → 범위 채우기
     if (getSel()) {
@@ -813,10 +879,8 @@ window.addEventListener('keydown', ev => {
         if (TOOL_KEYS[k.toLowerCase()]) { selectTool(TOOL_KEYS[k.toLowerCase()]); return; }
     }
 
-    if (k.toLowerCase()==='d' && currentTool==='fan') {
-        const idx=fanDirOrder.indexOf(fanDir);
-        fanDir=fanDirOrder[(idx+1)%fanDirOrder.length];
-        document.getElementById('fanDirBtn').textContent=`dir:${fanDirSymbols[fanDir]} [D]`;
+    if (k.toLowerCase()==='d' && (currentTool==='fan' || currentTool==='sign')) {
+        cycleDir();
     }
     if ((k==='+'||k==='=') && currentTool==='moving') {
         movingSpeed=Math.min(5,+(movingSpeed+0.1).toFixed(1));
@@ -834,6 +898,16 @@ window.addEventListener('keydown', ev => {
         movingLength=Math.min(10, movingLength+1);
         document.getElementById('movLenLabel').textContent=`len:${movingLength} [[]]`;
     }
+    if (k==='[' && currentTool==='fan') {
+        fanReach=Math.max(1, fanReach-1);
+        document.getElementById('fanReachLabel').textContent=`reach:${fanReach} [[]]`;
+        render();
+    }
+    if (k===']' && currentTool==='fan') {
+        fanReach=Math.min(30, fanReach+1);
+        document.getElementById('fanReachLabel').textContent=`reach:${fanReach} [[]]`;
+        render();
+    }
     if (k==='Escape') { movingStep=0; movingStart=null; exitSpawnMode(); exitStagePlaceMode(); clearSel(); render(); }
     if (k==='ArrowDown') { camY=Math.min(MAP_H-canvas.height, camY+CELL*4); render(); }
     if (k==='ArrowUp')   { camY=Math.max(0, camY-CELL*4); render(); }
@@ -846,16 +920,27 @@ function selectTool(tool) {
     document.querySelectorAll('.tool-btn[data-tool]').forEach(b =>
         b.classList.toggle('active', b.dataset.tool===tool)
     );
+    updateDirBtn();
     render();
 }
 document.querySelectorAll('.tool-btn[data-tool]').forEach(btn =>
     btn.addEventListener('click', ()=>selectTool(btn.dataset.tool))
 );
-document.getElementById('fanDirBtn').addEventListener('click', ()=>{
-    const idx=fanDirOrder.indexOf(fanDir);
-    fanDir=fanDirOrder[(idx+1)%fanDirOrder.length];
-    document.getElementById('fanDirBtn').textContent=`dir:${fanDirSymbols[fanDir]} [D]`;
-});
+function cycleDir() {
+    if (currentTool === 'sign') {
+        const idx = signDirOrder.indexOf(signDir);
+        signDir = signDirOrder[(idx + 1) % signDirOrder.length];
+    } else {
+        const idx = fanDirOrder.indexOf(fanDir);
+        fanDir = fanDirOrder[(idx + 1) % fanDirOrder.length];
+    }
+    updateDirBtn();
+}
+function updateDirBtn() {
+    const sym = currentTool === 'sign' ? signDirSymbols[signDir] : fanDirSymbols[fanDir];
+    document.getElementById('fanDirBtn').textContent = `dir:${sym} [D]`;
+}
+document.getElementById('fanDirBtn').addEventListener('click', cycleDir);
 
 // ── 스폰 모드 진입/해제 ───────────────────────────────────────────────────────
 function enterSpawnMode() {
@@ -886,7 +971,7 @@ function updateStatus(c, r) {
 function saveFile() {
     const cells = [];
     for (const [k, v] of grid) if (v.length) cells.push([k, v]);
-    const data = { cells, rows: ROWS, stages };
+    const data = { cells, rows: ROWS, stages, startPoint };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = 'njk_map.json'; a.click();
@@ -910,6 +995,7 @@ function loadFile() {
                 return;
             }
             grid.clear(); undoStack.length = 0;
+            startPoint = null;
             // 구버전(배열) / 신버전(객체) 둘 다 지원
             if (Array.isArray(raw)) {
                 for (const [k, v] of raw) grid.set(k, v);
@@ -917,6 +1003,7 @@ function loadFile() {
                 for (const [k, v] of raw.cells) grid.set(k, v);
                 if (raw.rows) { ROWS = raw.rows; MAP_H = ROWS * CELL; }
                 stages = raw.stages || [];
+                if (raw.startPoint) startPoint = { ...raw.startPoint };
                 // 구버전 호환: theme 필드 없으면 기본값(1스테이지부터) 부여
                 const reversedThemes = [...THEME_ORDER].reverse();
                 stages.forEach((s, i) => {
@@ -932,6 +1019,7 @@ function loadFile() {
     input.click();
 }
 document.getElementById('btnSave').addEventListener('click', saveFile);
+
 document.getElementById('btnLoad').addEventListener('click', loadFile);
 document.getElementById('btnUndo').addEventListener('click', undo);
 document.getElementById('btnClear').addEventListener('click', ()=>{
@@ -955,7 +1043,7 @@ document.getElementById('btnAddStage').addEventListener('click', () => {
 
 // ── Export ────────────────────────────────────────────────────────────────────
 function buildGameData() {
-    const platforms=[], fans=[], traps=[];
+    const platforms=[], fans=[], traps=[], signs=[];
     for (const [key,items] of grid) {
         if(!items.length) continue;
         const [cs,rs]=key.split(','); const col=+cs,row=+rs;
@@ -965,27 +1053,37 @@ function buildGameData() {
             if(t==='wall' || t==='floor')          platforms.push({x:wx,y:wy,w:CELL,h:CELL,type:'wall'});
             else if(t==='wall_breakable' || t==='floor_breakable') platforms.push({x:wx,y:wy,w:CELL,h:CELL,type:'wall',gimmick:'breakable',broken:false,standTimer:0,respawnTimer:0});
             else if(t==='wall_ice' || t==='floor_ice') platforms.push({x:wx,y:wy,w:CELL,h:CELL,type:'wall',gimmick:'ice'});
-            else if(t==='wall_save' || t==='floor_save')platforms.push({x:wx,y:wy,w:CELL,h:CELL,type:'save'});
             else if(t==='wall_goal' || t==='floor_goal')platforms.push({x:wx,y:wy,w:CELL,h:CELL,type:'goal'});
             else if(t==='diag_r')    platforms.push({x:wx,y:wy,w:CELL,h:CELL,type:'diag_r'});
             else if(t==='diag_l')    platforms.push({x:wx,y:wy,w:CELL,h:CELL,type:'diag_l'});
             else if(t==='trap')      traps.push({x:wx+CELL/2-20,y:wy+CELL/2-20,w:40,h:40,bounceVX:8,bounceVY:-15});
             else if(t==='fan'){
-                const DV={right:{windX:3.5,windY:0},left:{windX:-3.5,windY:0},up:{windX:0,windY:-2},down:{windX:0,windY:2}};
+                const DV={right:{windX:3.5,windY:0,dx:1,dy:0},left:{windX:-3.5,windY:0,dx:-1,dy:0},
+                          up:{windX:0,windY:-2,dx:0,dy:-1},down:{windX:0,windY:2,dx:0,dy:1}};
                 const d=DV[item.dir]||DV.right;
-                fans.push({x:wx+5,y:wy+5,w:CELL-10,h:CELL-10,...d,range:280});
+                const reach=item.reach||5;
+                let zx=wx, zy=wy, zw=CELL, zh=CELL;
+                if (d.dx>0)      { zx=wx+CELL;        zw=reach*CELL; }
+                else if (d.dx<0) { zx=wx-reach*CELL;  zw=reach*CELL; }
+                else if (d.dy>0) { zy=wy+CELL;        zh=reach*CELL; }
+                else if (d.dy<0) { zy=wy-reach*CELL;  zh=reach*CELL; }
+                fans.push({x:wx+5,y:wy+5,w:CELL-10,h:CELL-10,
+                           windX:d.windX,windY:d.windY,dir:item.dir||'right',
+                           zoneX:zx,zoneY:zy,zoneW:zw,zoneH:zh});
             } else if(t==='moving'){
                 const ec=item.endC??col, er=item.endR??row;
                 const ex=ec*CELL, ey=er*CELL;
                 const w = (item.len || 1) * CELL;
                 platforms.push({x:wx,y:wy,w:w,h:14,type:'normal',gimmick:'moving',
                     startX:wx, startY:wy, endX:ex, endY:ey, moveSpeed:item.speed||1.2, moveProgress:0, moveDir:1});
+            } else if(t==='sign'){
+                signs.push({x:wx, y:wy, w:CELL, h:CELL, dir:item.dir||'right'});
             }
         }
     }
     // 부서지는 바닥에 런타임 필드 추가
     platforms.forEach(p=>{ if(!p.hasOwnProperty('broken')){ p.broken=false; p.standTimer=0; p.respawnTimer=0; } });
-    return {platforms, fans, traps};
+    return {platforms, fans, traps, signs};
 }
 
 function buildExport() {
@@ -1000,7 +1098,7 @@ function buildExport() {
     return [
         `// 플랫폼: ${platforms.length}  팬: ${fans.length}  함정: ${traps.length}`,
         'const PLATFORMS_DEF = [', platforms.map(pStr).join(',\n'), '];','',
-        'const FANS = [', fans.map(f=>`  { x:${f.x}, y:${f.y}, w:${f.w}, h:${f.h}, windX:${f.windX}, windY:${f.windY}, range:${f.range} }`).join(',\n'), '];','',
+        'const FANS = [', fans.map(f=>`  { x:${f.x}, y:${f.y}, w:${f.w}, h:${f.h}, windX:${f.windX}, windY:${f.windY}, dir:'${f.dir||'right'}', zoneX:${f.zoneX}, zoneY:${f.zoneY}, zoneW:${f.zoneW}, zoneH:${f.zoneH} }`).join(',\n'), '];','',
         'const TRAPS = [', traps.map(t=>`  { x:${t.x}, y:${t.y}, w:${t.w}, h:${t.h}, bounceVX:${t.bounceVX}, bounceVY:${t.bounceVY} }`).join(',\n'), '];',
     ].join('\n');
 }
@@ -1056,8 +1154,8 @@ async function startPlay(spawnWorldX, spawnWorldY) {
         platforms: data.platforms,
         fans:      data.fans,
         traps:     data.traps,
+        signs:     data.signs,
         mapH:      MAP_H,
-        savePlatformY: null, // 에디터 플레이는 세이브포인트 없음
         stages:    stages.length > 0 ? stages.map(s => ({ ...s })) : null,
     });
 
@@ -1084,6 +1182,10 @@ function stopPlay() {
     if (pRafId) { cancelAnimationFrame(pRafId); pRafId = null; }
     for (const k of Object.keys(pKeys)) pKeys[k] = false;
     playOverlayEl.classList.remove('show');
+    // Play 진입 때 발생한 mousedown의 mouseup이 오버레이에 먹혀 stuck됨 → 복귀 시 리셋
+    mouseDown = false;
+    selDragging = false;
+    lastKey = null;
     render();
 }
 

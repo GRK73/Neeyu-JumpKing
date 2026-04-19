@@ -310,7 +310,23 @@ body {
     padding-bottom: 10px;
     margin-bottom: 10px;
 }
-.list-header h2 { margin: 0; color: #fff; }
+.list-header h2 {
+    margin: 0;
+    color: #ffd84a;
+    font: bold 24px 'KerisKedu', monospace;
+    letter-spacing: 3px;
+}
+.list-msg {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    min-height: 120px;
+    color: #ffd84a;
+    font: bold 20px 'KerisKedu', monospace;
+    letter-spacing: 2px;
+    text-align: center;
+}
 #customMapList {
     flex: 1;
     overflow-y: auto;
@@ -331,11 +347,59 @@ body {
     background: #0d0d1a;
     border: 1px solid #554;
     color: #fff;
-    font-family: monospace;
+    font-family: 'KerisKedu', monospace;
     font-size: 16px;
+    letter-spacing: 1px;
     border-radius: 4px;
     margin-bottom: 10px;
     box-sizing: border-box;
+}
+.input-field::placeholder {
+    color: #888;
+    font-family: 'KerisKedu', monospace;
+}
+
+#uploadSuccessOverlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: rgba(13, 13, 26, 0.85);
+    z-index: 180;
+}
+#uploadSuccessOverlay.hidden { display: none; }
+.success-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 32px 56px;
+    background: #0f2a14;
+    border: 2px solid #44cc66;
+    border-radius: 10px;
+    box-shadow: 0 0 40px rgba(68, 204, 102, 0.4);
+}
+.success-box h2 {
+    color: #88ff88;
+    font: bold 28px 'KerisKedu', monospace;
+    letter-spacing: 4px;
+    margin-bottom: 4px;
+    text-shadow: 0 0 16px rgba(136, 255, 136, 0.4);
+}
+.success-box .success-msg {
+    color: #c8ffc8;
+    font: 16px 'KerisKedu', monospace;
+    letter-spacing: 1px;
+}
+.success-box .menuBtn {
+    color: #88ff88;
+    border-color: #44cc66;
+}
+.success-box .menuBtn:hover {
+    color: #c8ffc8;
+    border-color: #88ff88;
+    background: #1a3d22;
 }
 
 .map-item {
@@ -375,7 +439,7 @@ body {
 }
 .pauseBox h2 {
     color: #ffd84a;
-    font: bold 32px monospace;
+    font: bold 32px 'KerisKedu', monospace;
     letter-spacing: 4px;
     margin-bottom: 4px;
 }

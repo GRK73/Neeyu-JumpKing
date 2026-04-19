@@ -343,14 +343,14 @@ document.querySelectorAll('.menuBtn').forEach(btn => {
 
 async function fetchCustomMaps() {
     const listDiv = document.getElementById('customMapList');
-    listDiv.innerHTML = '불러오는 중...';
+    listDiv.innerHTML = '<div class="list-msg">불러오는 중...</div>';
     try {
         const res = await fetch(SCRIPT_URL);
         const result = await res.json();
         if (result.success) {
             listDiv.innerHTML = '';
             if (result.data.length === 0) {
-                listDiv.innerHTML = '등록된 맵이 없습니다.';
+                listDiv.innerHTML = '<div class="list-msg">등록된 맵이 없습니다.</div>';
             } else {
                 result.data.forEach(map => {
                     const item = document.createElement('div');
@@ -474,8 +474,8 @@ document.getElementById('btnSubmitUpload').addEventListener('click', async () =>
         const result = await res.json();
         
         if (result.success) {
-            alert('업로드 완료!');
             document.getElementById('uploadMapOverlay').classList.add('hidden');
+            document.getElementById('uploadSuccessOverlay').classList.remove('hidden');
             fetchCustomMaps(); // 리스트 새로고침
         } else {
             alert('업로드 실패: ' + result.error);
@@ -813,9 +813,12 @@ async function showRankingModal(mapKey, mapName) {
 }
 
 document.getElementById('mainRankingBtn').addEventListener('click', () => {
-    showRankingModal(MAIN_MAP_KEY, 'Neeyu Main');
+    showRankingModal(MAIN_MAP_KEY, '메인 맵');
 });
 document.getElementById('btnCloseRanking').addEventListener('click', () => {
     rankingOverlayEl.classList.add('hidden');
+});
+document.getElementById('btnCloseUploadSuccess').addEventListener('click', () => {
+    document.getElementById('uploadSuccessOverlay').classList.add('hidden');
 });
 

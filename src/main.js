@@ -759,6 +759,13 @@ function drawMenuFrame(ts) {
 
 loadMenuAssets().then(() => startMenuScene());
 
+// ── PWA: 서비스 워커 등록 ────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(err => console.warn('SW 등록 실패', err));
+    });
+}
+
 // ── 랭킹 모달 (메뉴에서 진입) ────────────────────────────────────────────────
 const rankingOverlayEl = document.getElementById('rankingOverlay');
 const rankingTitleEl   = document.getElementById('rankingTitle');

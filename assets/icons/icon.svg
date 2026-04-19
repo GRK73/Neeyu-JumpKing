@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#0d0d1a"/>
+  <rect x="32" y="32" width="448" height="448" rx="56" fill="#1a1a2e" stroke="#554433" stroke-width="8"/>
+  <text x="256" y="300" font-family="monospace" font-weight="bold" font-size="180" fill="#ffd84a" text-anchor="middle" letter-spacing="8">NJK</text>
+  <text x="256" y="390" font-family="monospace" font-weight="bold" font-size="44" fill="#fff6b3" text-anchor="middle" letter-spacing="4">Jump King</text>
+</svg>

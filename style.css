@@ -102,20 +102,97 @@ body {
     color: #fff6b3;
 }
 
+#gameTimer {
+    position: absolute;
+    top: 12px;
+    left: 16px;
+    padding: 6px 14px;
+    background: rgba(26, 26, 46, 0.7);
+    border: 1px solid #554;
+    border-radius: 6px;
+    color: #ffd84a;
+    font: bold 18px 'KerisKedu', monospace;
+    letter-spacing: 2px;
+    z-index: 80;
+    user-select: none;
+    pointer-events: none;
+}
+#gameTimer.hidden { display: none; }
+
 #endText {
     position: absolute;
     inset: 0;
     display: none;
     justify-content: center;
     align-items: center;
-    color: #fff;
-    font: bold 72px monospace;
-    letter-spacing: 6px;
-    text-shadow: 0 0 24px rgba(255, 255, 255, 0.4);
-    pointer-events: none;
-    background: transparent;
+    background: rgba(13, 13, 26, 0.85);
+    z-index: 160;
 }
 #endText.show { display: flex; }
+
+.endBox {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 32px 44px;
+    min-width: 420px;
+    max-width: 520px;
+    background: #1a1a2e;
+    border: 2px solid #554;
+    border-radius: 10px;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
+}
+.endTitle {
+    color: #ffd84a;
+    font: bold 44px 'KerisKedu', monospace;
+    letter-spacing: 6px;
+    text-shadow: 0 0 20px rgba(255, 216, 74, 0.4);
+}
+#endTime {
+    color: #fff;
+    font: bold 32px 'KerisKedu', monospace;
+    letter-spacing: 3px;
+    margin: 4px 0 12px;
+}
+.endSubmitBox {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    align-items: center;
+}
+.endSubmitBox.hidden { display: none; }
+.endSubmitBox .input-field { margin-bottom: 0; }
+.endNotice {
+    color: #9cf;
+    font: 13px 'KerisKedu', monospace;
+    min-height: 16px;
+}
+.endNotice.err { color: #ff8080; }
+.endNotice.ok  { color: #88ff88; }
+.rankingList {
+    width: 100%;
+    max-height: 240px;
+    overflow-y: auto;
+    background: #0d0d1a;
+    border: 1px solid #554;
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: #ddd;
+    font: 14px 'KerisKedu', monospace;
+}
+.rankingList.hidden { display: none; }
+.rank-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 0;
+    border-bottom: 1px dashed #333;
+}
+.rank-row:last-child { border-bottom: none; }
+.rank-row .rank-pos { color: #ffd84a; width: 32px; }
+.rank-row .rank-user { flex: 1; }
+.rank-row .rank-time { color: #88ff88; }
 
 #songPicker {
     position: absolute;

@@ -12,6 +12,8 @@
         <div id="loading" class="hidden">Loading...</div>
         <div id="playMsg"></div>
 
+        <div id="gameTimer" class="hidden">00:00.0</div>
+
         <div id="songPicker" class="hidden">
             <button id="songPrev" class="songArrow">&#9664;</button>
             <span id="songTitle">No Song</span>
@@ -55,7 +57,20 @@
             </div>
         </div>
 
-        <div id="endText">The End.</div>
+        <div id="endText">
+            <div class="endBox">
+                <h2 class="endTitle">The End.</h2>
+                <div id="endTime">00:00.0</div>
+                <div id="endSubmitBox" class="endSubmitBox">
+                    <input type="text" id="endNickname" maxlength="12" placeholder="닉네임 (2~12자)" class="input-field">
+                    <button class="menuBtn small-btn" id="btnSubmitRanking">랭킹 등록</button>
+                </div>
+                <div id="endNotice" class="endNotice"></div>
+                <button class="menuBtn small-btn" id="btnViewRanking">랭킹 보기</button>
+                <div id="rankingList" class="rankingList hidden"></div>
+                <button class="menuBtn small-btn" id="btnEndMenu">메뉴로</button>
+            </div>
+        </div>
 
         <div id="pauseMenu" class="hidden">
             <div class="pauseBox">

@@ -29,6 +29,15 @@
                 <button class="menuBtn" data-action="editor">Editor</button>
             </div>
             <input type="file" id="localMapInput" accept="application/json" style="display:none;">
+            <button id="mainRankingBtn" title="Main Map 랭킹">🏆</button>
+        </div>
+
+        <div id="rankingOverlay" class="hidden">
+            <div class="pauseBox" style="width:480px;">
+                <h2 id="rankingTitle">Ranking</h2>
+                <div id="rankingModalList" class="rankingList"></div>
+                <button class="menuBtn small-btn" id="btnCloseRanking">Close</button>
+            </div>
         </div>
 
         <div id="customMapListOverlay" class="hidden">

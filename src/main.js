@@ -326,7 +326,7 @@ document.querySelectorAll('.menuBtn').forEach(btn => {
         const action = btn.dataset.action;
         if (action === 'main') {
             try {
-                const mapJson = await loadMapJson('assets/maps/testmap.json');
+                const mapJson = await loadMapJson('assets/maps/njk_map.json');
                 await startGame(mapJson, { mapKey: MAIN_MAP_KEY, mapName: 'Neeyu Main' });
             } catch (e) {
                 console.error(e);
@@ -355,14 +355,26 @@ async function fetchCustomMaps() {
                 result.data.forEach(map => {
                     const item = document.createElement('div');
                     item.className = 'map-item';
+                    const textDiv = document.createElement('div');
+                    textDiv.className = 'map-item-text';
                     const titleDiv = document.createElement('div');
                     titleDiv.className = 'map-item-title';
                     titleDiv.textContent = map.mapName;
                     const infoDiv = document.createElement('div');
                     infoDiv.className = 'map-item-info';
                     infoDiv.textContent = `제작자: ${map.creator} | 등록일: ${map.date}`;
-                    item.appendChild(titleDiv);
-                    item.appendChild(infoDiv);
+                    textDiv.appendChild(titleDiv);
+                    textDiv.appendChild(infoDiv);
+                    const rankBtn = document.createElement('button');
+                    rankBtn.className = 'rank-btn';
+                    rankBtn.textContent = '🏆';
+                    rankBtn.title = '랭킹 보기';
+                    rankBtn.addEventListener('click', (ev) => {
+                        ev.stopPropagation();
+                        showRankingModal(map.fileId, map.mapName);
+                    });
+                    item.appendChild(textDiv);
+                    item.appendChild(rankBtn);
                     item.addEventListener('click', async () => {
                         document.getElementById('customMapListOverlay').classList.add('hidden');
                         menuEl.classList.add('hidden');
@@ -746,4 +758,57 @@ function drawMenuFrame(ts) {
 }
 
 loadMenuAssets().then(() => startMenuScene());
+
+// ── 랭킹 모달 (메뉴에서 진입) ────────────────────────────────────────────────
+const rankingOverlayEl = document.getElementById('rankingOverlay');
+const rankingTitleEl   = document.getElementById('rankingTitle');
+const rankingModalListEl = document.getElementById('rankingModalList');
+
+function renderRankingInto(targetEl, list) {
+    targetEl.innerHTML = '';
+    if (!list.length) {
+        targetEl.textContent = '아직 기록이 없습니다.';
+        return;
+    }
+    list.forEach((row, i) => {
+        const div = document.createElement('div');
+        div.className = 'rank-row';
+        const pos = document.createElement('span');
+        pos.className = 'rank-pos';
+        pos.textContent = `#${i + 1}`;
+        const usr = document.createElement('span');
+        usr.className = 'rank-user';
+        usr.textContent = row.user;
+        const tim = document.createElement('span');
+        tim.className = 'rank-time';
+        tim.textContent = formatTimeMs(Number(row.timeMs));
+        div.appendChild(pos);
+        div.appendChild(usr);
+        div.appendChild(tim);
+        targetEl.appendChild(div);
+    });
+}
+
+async function showRankingModal(mapKey, mapName) {
+    rankingTitleEl.textContent = `${mapName} 랭킹`;
+    rankingModalListEl.textContent = '불러오는 중...';
+    rankingOverlayEl.classList.remove('hidden');
+    try {
+        const url = SCRIPT_URL + '?action=ranking&mapKey=' + encodeURIComponent(mapKey);
+        const res = await fetch(url);
+        const result = await res.json();
+        if (!result.success) throw new Error(result.error || '조회 실패');
+        renderRankingInto(rankingModalListEl, result.data || []);
+    } catch (e) {
+        console.error(e);
+        rankingModalListEl.textContent = '랭킹 로드 실패: ' + e.message;
+    }
+}
+
+document.getElementById('mainRankingBtn').addEventListener('click', () => {
+    showRankingModal(MAIN_MAP_KEY, 'Neeyu Main');
+});
+document.getElementById('btnCloseRanking').addEventListener('click', () => {
+    rankingOverlayEl.classList.add('hidden');
+});
 

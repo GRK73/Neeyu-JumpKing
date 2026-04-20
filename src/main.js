@@ -56,10 +56,21 @@ function cycleSong(delta) {
     applySong();
 }
 
-const CANVAS_W = window.innerWidth;
-const CANVAS_H = window.innerHeight;
-canvas.width   = CANVAS_W;
-canvas.height  = CANVAS_H;
+let CANVAS_W = window.innerWidth;
+let CANVAS_H = window.innerHeight;
+function resizeCanvas() {
+    CANVAS_W = window.innerWidth;
+    CANVAS_H = window.innerHeight;
+    canvas.width  = CANVAS_W;
+    canvas.height = CANVAS_H;
+}
+resizeCanvas();
+window.addEventListener('resize', () => {
+    if (!engine) resizeCanvas();
+});
+window.addEventListener('orientationchange', () => {
+    if (!engine) resizeCanvas();
+});
 
 // ── 상태 ─────────────────────────────────────────────────────────────────────
 let engine = null;
@@ -104,6 +115,7 @@ function showPlayMsg(txt, ms = 0) {
 // ── 게임 시작 (맵 데이터 주입) ───────────────────────────────────────────────
 async function startGame(mapJson, opts = {}) {
     stopMenuScene();
+    resizeCanvas();
     currentMapKey = opts.mapKey ?? null;
     currentMapName = opts.mapName ?? '';
     const cellsArr = Array.isArray(mapJson.cells) ? mapJson.cells : [];

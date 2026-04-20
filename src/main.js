@@ -124,6 +124,15 @@ async function startGame(mapJson, opts = {}) {
 
     const { platforms, fans, traps, signs } = buildGameDataFromCells(cellsArr, CELL);
 
+    // 맵의 실제 가로 폭 (가장 오른쪽 셀의 col + 1). 캔버스 폭과 무관한 wrap 경계.
+    let maxCol = 0;
+    for (const [key] of cellsArr) {
+        const c = +String(key).split(',')[0];
+        if (c > maxCol) maxCol = c;
+    }
+    const mapCols = Number.isFinite(mapJson.cols) && mapJson.cols > 0 ? mapJson.cols : (maxCol + 1);
+    const mapW = mapCols * CELL;
+
     let stages = mapJson.stages && mapJson.stages.length > 0
         ? mapJson.stages.map(s => ({ ...s }))
         : null;
@@ -135,7 +144,7 @@ async function startGame(mapJson, opts = {}) {
     engine = new GameEngine({
         canvasW: CANVAS_W, canvasH: CANVAS_H,
         platforms, fans, traps, signs,
-        mapH, stages,
+        mapW, mapH, stages,
     });
 
     renderer = new Renderer({

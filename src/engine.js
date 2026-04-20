@@ -107,10 +107,12 @@ export class GameEngine {
      *   stages?: object[]|null
      * }} opts
      */
-    constructor({ canvasW, canvasH, platforms, fans, traps, signs = [], mapH, stages = null }) {
+    constructor({ canvasW, canvasH, platforms, fans, traps, signs = [], mapW, mapH, stages = null }) {
         this.CANVAS_W = canvasW;
         this.CANVAS_H = canvasH;
-        this.MAP_W    = Math.floor(canvasW / CELL) * CELL;
+        this.MAP_W    = (typeof mapW === 'number' && mapW > 0)
+            ? mapW
+            : Math.floor(canvasW / CELL) * CELL;
         this.MAP_H    = mapH;
 
         const charW   = Math.round(canvasW * CHAR_SCALE);

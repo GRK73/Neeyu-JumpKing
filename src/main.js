@@ -133,6 +133,13 @@ async function startGame(mapJson, opts = {}) {
     const mapCols = Number.isFinite(mapJson.cols) && mapJson.cols > 0 ? mapJson.cols : (maxCol + 1);
     const mapW = mapCols * CELL;
 
+    // 캔버스 내부 해상도를 맵 폭에 맞춤 — CSS가 100%로 스트레치하므로 왜곡 없이 전체 맵이 보임
+    const displayAspect = window.innerHeight / window.innerWidth;
+    CANVAS_W = mapW;
+    CANVAS_H = Math.round(mapW * displayAspect);
+    canvas.width  = CANVAS_W;
+    canvas.height = CANVAS_H;
+
     let stages = mapJson.stages && mapJson.stages.length > 0
         ? mapJson.stages.map(s => ({ ...s }))
         : null;

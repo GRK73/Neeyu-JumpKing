@@ -6,8 +6,12 @@
     <title>Neeyu Jump King</title>
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.webmanifest">
-    <link rel="icon" href="assets/icons/icon.svg" type="image/svg+xml">
+    <link rel="icon" href="assets/icon/iconsvg.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="assets/icon/icon192.png">
     <meta name="theme-color" content="#ffd84a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Neeyu JK">
 </head>
 <body>
     <div id="wrapper">
@@ -15,7 +19,23 @@
         <div id="loading" class="hidden">Loading...</div>
         <div id="playMsg"></div>
 
+        <button id="mobilePauseBtn" class="hidden" aria-label="Pause">❚❚</button>
         <div id="gameTimer" class="hidden">00:00.0</div>
+
+        <div id="mobileControls" class="hidden">
+            <div id="padDir">
+                <button id="padLeft" class="padBtn" aria-label="Left">◀</button>
+                <button id="padRight" class="padBtn" aria-label="Right">▶</button>
+            </div>
+            <button id="padJump" class="padBtn" aria-label="Jump">▲</button>
+        </div>
+
+        <div id="rotateOverlay" class="hidden">
+            <div class="rotate-box">
+                <div class="rotate-icon">📱↻</div>
+                <div class="rotate-msg">기기를 가로로 돌려주세요</div>
+            </div>
+        </div>
 
         <div id="songPicker" class="hidden">
             <button id="songPrev" class="songArrow">&#9664;</button>
@@ -29,7 +49,9 @@
             <div id="menuButtons">
                 <button class="menuBtn" data-action="main">Main Map</button>
                 <button class="menuBtn" data-action="custom">Custom Map</button>
-                <button class="menuBtn" data-action="editor">Editor</button>
+                <button class="menuBtn" data-action="editor" data-desktop-only>Editor</button>
+                <button class="menuBtn hidden" id="btnInstallApp">앱으로 설치</button>
+                <div id="iosInstallHint" class="hidden">홈 화면에 추가 → 앱으로 설치</div>
             </div>
             <input type="file" id="localMapInput" accept="application/json" style="display:none;">
             <button id="mainRankingBtn" title="Main Map 랭킹">🏆</button>

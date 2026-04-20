@@ -1,4 +1,4 @@
-const CACHE = 'njk-v1';
+const CACHE = 'njk-v2';
 const SHELL = [
     './',
     './index.html',
@@ -13,7 +13,9 @@ const SHELL = [
     './src/map_loader.js',
     './src/stage_themes.js',
     './assets/KERISKEDU_B.otf',
-    './assets/icons/icon.svg',
+    './assets/icon/icon192.png',
+    './assets/icon/icon512.png',
+    './assets/icon/iconsvg.svg',
 ];
 
 self.addEventListener('install', (e) => {

@@ -9,11 +9,22 @@
     margin: 0;
     padding: 0;
     box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
 }
 
 body {
     background: #0d0d1a;
     overflow: hidden;
+    touch-action: none;
+    overscroll-behavior: none;
+}
+
+.input-field, .input-field::placeholder {
+    -webkit-user-select: text;
+    user-select: text;
 }
 
 #wrapper {
@@ -443,3 +454,130 @@ body {
     letter-spacing: 4px;
     margin-bottom: 4px;
 }
+
+/* ── Mobile controls ─────────────────────────────────────────────────────── */
+#mobileControls {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 90;
+}
+#mobileControls.hidden { display: none; }
+
+#padDir {
+    position: absolute;
+    left: calc(24px + env(safe-area-inset-left, 0px));
+    bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    display: flex;
+    gap: 14px;
+}
+
+#padJump {
+    position: absolute;
+    right: calc(32px + env(safe-area-inset-right, 0px));
+    bottom: calc(32px + env(safe-area-inset-bottom, 0px));
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    background: rgba(255, 216, 74, 0.18);
+    border: 2px solid #ffd84a;
+    color: #ffd84a;
+    font-size: 36px;
+    pointer-events: auto;
+    touch-action: none;
+    cursor: pointer;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+}
+#padJump.pressed { background: rgba(255, 216, 74, 0.4); }
+
+.padBtn {
+    -webkit-tap-highlight-color: transparent;
+    pointer-events: auto;
+    touch-action: none;
+    cursor: pointer;
+    user-select: none;
+}
+
+#padDir .padBtn {
+    width: 80px;
+    height: 80px;
+    border-radius: 14px;
+    background: rgba(255, 216, 74, 0.18);
+    border: 2px solid #ffd84a;
+    color: #ffd84a;
+    font-size: 28px;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+}
+#padDir .padBtn.pressed { background: rgba(255, 216, 74, 0.4); }
+
+/* ── Mobile pause button (left of timer) ─────────────────────────────────── */
+#mobilePauseBtn {
+    position: absolute;
+    top: calc(12px + env(safe-area-inset-top, 0px));
+    left: calc(16px + env(safe-area-inset-left, 0px));
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    background: rgba(26, 26, 46, 0.7);
+    border: 1px solid #554;
+    border-radius: 6px;
+    color: #ffd84a;
+    font: bold 14px 'KerisKedu', monospace;
+    letter-spacing: 1px;
+    cursor: pointer;
+    z-index: 85;
+}
+#mobilePauseBtn.hidden { display: none; }
+#mobilePauseBtn:active { background: rgba(42, 42, 68, 0.9); }
+
+/* When mobile pause button is visible, push timer to its right */
+body.mobile #gameTimer {
+    left: calc(60px + env(safe-area-inset-left, 0px));
+}
+
+/* ── Rotate overlay ──────────────────────────────────────────────────────── */
+#rotateOverlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #0d0d1a;
+    z-index: 500;
+}
+#rotateOverlay.hidden { display: none; }
+.rotate-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    padding: 32px;
+    color: #ffd84a;
+    text-align: center;
+}
+.rotate-icon {
+    font-size: 72px;
+    animation: rotateHint 1.6s ease-in-out infinite;
+}
+.rotate-msg {
+    font: bold 20px 'KerisKedu', monospace;
+    letter-spacing: 2px;
+}
+@keyframes rotateHint {
+    0%, 100% { transform: rotate(0deg); }
+    50% { transform: rotate(90deg); }
+}
+
+/* ── Install prompt ──────────────────────────────────────────────────────── */
+#btnInstallApp.hidden { display: none; }
+#iosInstallHint {
+    margin-top: 8px;
+    color: #9cf;
+    font: 13px 'KerisKedu', monospace;
+    letter-spacing: 1px;
+    text-align: center;
+}
+#iosInstallHint.hidden { display: none; }
+
+/* Hide editor on touch devices */
+body.mobile [data-desktop-only] { display: none; }

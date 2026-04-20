@@ -179,6 +179,7 @@ async function startGame(mapJson, opts = {}) {
     loading.classList.add('hidden');
 
     runStartTs = performance.now();
+    showMobileUI();
 
     if (rafId) cancelAnimationFrame(rafId);
     rafId = requestAnimationFrame(ts => { lastTime = ts; loop(ts); });
@@ -209,9 +210,12 @@ function togglePause() {
     paused = !paused;
     if (paused) {
         keys = {};
+        document.querySelectorAll('.padBtn.pressed, #padJump.pressed').forEach(el => el.classList.remove('pressed'));
         pauseStartTs = performance.now();
         pauseEl.classList.remove('hidden');
+        hideMobileUI();
     } else {
+        showMobileUI();
         if (pauseStartTs) {
             pausedAccumMs += performance.now() - pauseStartTs;
             pauseStartTs = 0;
@@ -224,6 +228,7 @@ function togglePause() {
 function quitToMenu() {
     paused = false;
     pauseEl.classList.add('hidden');
+    hideMobileUI();
     if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
     engine = null;
     renderer = null;
@@ -249,6 +254,7 @@ document.getElementById('songNext').addEventListener('click', () => cycleSong(1)
 function beginEnding() {
     finalTimeMs = currentElapsedMs();
     timerEl.classList.add('hidden');
+    hideMobileUI();
     ending = { phase: 3 };
     keys = {};
     engine.vx = 0; engine.vy = 0;
@@ -821,4 +827,121 @@ document.getElementById('btnCloseRanking').addEventListener('click', () => {
 document.getElementById('btnCloseUploadSuccess').addEventListener('click', () => {
     document.getElementById('uploadSuccessOverlay').classList.add('hidden');
 });
+
+// ── 모바일 지원 ──────────────────────────────────────────────────────────────
+const isMobile = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+const isStandalone = matchMedia('(display-mode: standalone)').matches
+    || window.navigator.standalone === true;
+
+if (isMobile) {
+    document.body.classList.add('mobile');
+}
+
+const mobileControlsEl = document.getElementById('mobileControls');
+const mobilePauseBtnEl = document.getElementById('mobilePauseBtn');
+
+function showMobileUI() {
+    if (!isMobile) return;
+    mobileControlsEl.classList.remove('hidden');
+    mobilePauseBtnEl.classList.remove('hidden');
+}
+function hideMobileUI() {
+    mobileControlsEl.classList.add('hidden');
+    mobilePauseBtnEl.classList.add('hidden');
+}
+
+function bindPad(el, keyCode) {
+    const activeIds = new Set();
+    const press = (ev) => {
+        ev.preventDefault();
+        if (!engine || paused || ending) return;
+        activeIds.add(ev.pointerId);
+        if (keys[keyCode]) return;
+        keys[keyCode] = true;
+        el.classList.add('pressed');
+        engine.onKeydown(keyCode);
+    };
+    const release = (ev) => {
+        ev.preventDefault();
+        activeIds.delete(ev.pointerId);
+        if (activeIds.size > 0) return;
+        if (!keys[keyCode]) return;
+        keys[keyCode] = false;
+        el.classList.remove('pressed');
+        if (engine) engine.onKeyup(keyCode, keys);
+    };
+    el.addEventListener('pointerdown', press);
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+    el.addEventListener('pointerleave', release);
+    el.addEventListener('contextmenu', e => e.preventDefault());
+}
+
+if (isMobile) {
+    bindPad(document.getElementById('padLeft'), 'ArrowLeft');
+    bindPad(document.getElementById('padRight'), 'ArrowRight');
+    bindPad(document.getElementById('padJump'), 'Space');
+    mobilePauseBtnEl.addEventListener('click', () => {
+        if (engine && !ending) togglePause();
+    });
+}
+
+// ── 회전 안내 ────────────────────────────────────────────────────────────────
+const rotateOverlayEl = document.getElementById('rotateOverlay');
+function updateOrientation() {
+    if (!isMobile) return;
+    const portrait = window.innerHeight > window.innerWidth;
+    rotateOverlayEl.classList.toggle('hidden', !portrait);
+}
+if (isMobile) {
+    window.addEventListener('resize', updateOrientation);
+    window.addEventListener('orientationchange', updateOrientation);
+    updateOrientation();
+}
+
+// ── PWA 설치 유도 ────────────────────────────────────────────────────────────
+let deferredInstallPrompt = null;
+const installBtnEl = document.getElementById('btnInstallApp');
+const iosHintEl = document.getElementById('iosInstallHint');
+
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    if (isMobile && !isStandalone) {
+        installBtnEl.classList.remove('hidden');
+    }
+});
+
+installBtnEl.addEventListener('click', async () => {
+    if (!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    try {
+        await deferredInstallPrompt.userChoice;
+    } catch { /* user dismissed */ }
+    deferredInstallPrompt = null;
+    installBtnEl.classList.add('hidden');
+});
+
+window.addEventListener('appinstalled', () => {
+    installBtnEl.classList.add('hidden');
+    iosHintEl.classList.add('hidden');
+    deferredInstallPrompt = null;
+});
+
+if (isIOS && !isStandalone) {
+    iosHintEl.classList.remove('hidden');
+}
+
+// ── 오디오 언락 (iOS Safari) ─────────────────────────────────────────────────
+let audioUnlocked = false;
+function unlockAudio() {
+    if (audioUnlocked) return;
+    audioUnlocked = true;
+    const p = bgmEl.play();
+    if (p && p.catch) p.catch(() => {});
+    bgmEl.pause();
+}
+window.addEventListener('pointerdown', unlockAudio, { once: true });
+window.addEventListener('keydown', unlockAudio, { once: true });
 
